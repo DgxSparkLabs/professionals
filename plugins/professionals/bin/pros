@@ -59,7 +59,7 @@ DEFAULTS = {
     "max_live": 6, "max_depth": 4, "idle_reap_min": 30, "deliver_deadline_s": 600,
     "stuck_min": 10, "default_mode": "dontAsk", "model": "", "summon_budget_per_hour": 20,
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
-    "max_ask_wait_s": 100, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
+    "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
     "publish_guard": "",
 }
 DEFAULT_DENY = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/.netrc", "~/.claude/.credentials.json"]
@@ -1092,6 +1092,38 @@ def pro_hook(event, raw, p):
         hook_stop(s, p, common)
 
 
+def auto_reply(s, final):
+    """A turn ended with exactly one live unanswered task and no delegation pending: its final message is the reply.
+    Replies then never depend on a Bash rule matching `pros reply` (seen live: four denied multi-line replies)."""
+    try:
+        final = (final or "").strip()
+        rec = get_rec(s)
+        if not final or not rec or not cfg()["auto_reply"]:
+            return
+        me = rec["name"]
+        live = [m for m in all_msgs() if m["to"] == me and m["kind"] == "task" and m["state"] == "injected"
+                and now() - m.get("injected_at", m["created"]) <= cfg()["deliver_deadline_s"]]
+        if len({m["task"] for m in live}) != 1:
+            return  # none, or several in flight: only an explicit `pros reply <task>` can say which one
+        orig = live[-1]
+        if any(c.get("parent") == orig["id"] and c["kind"] == "task" and c["state"] in ("queued", "injected")
+               for c in all_msgs()):
+            return  # it delegated part of the work and is waiting for that answer
+        target = orig["reply_to"] or orig["from"]
+        body = "[auto-reply from the final message of %s]\n%s" % (me, final)
+        m = new_msg(me, target, orig["task"], "reply", me, orig["chain"], body, now() + 3600, parent=orig["id"])
+        m["auto_reply"], m["project"] = True, rec.get("project", "")
+        if orig.get("origin_session"):
+            m["origin_session"] = orig["origin_session"]
+        status = post(m) if (target == "user" or find_session(target)) else (save_msg(m) or "stored")
+        orig = get_msg(orig["id"]) or orig
+        orig["state"], orig["answered_at"], orig["answered_by"] = "answered", now(), "auto-reply"
+        save_msg(orig)
+        log("auto-reply", task=orig["task"], to=target, status=status)
+    except Exception as e:  # noqa: BLE001
+        log("auto-reply-error", err=str(e))
+
+
 def hook_stop(s, p, common):
     cap = cfg()["max_blocks"]
     try:
@@ -1103,6 +1135,7 @@ def hook_stop(s, p, common):
                 if rec and queue_len(s):
                     notify(rec.get("summoner", "user"), "-", "%s hit the delivery cap (%d in a row); %d message(s) wait" % (rec["name"], cap, queue_len(s)))
                 return
+            auto_reply(s, p.get("last_assistant_message"))
             m, dst = queue_claim(s)
             if m:
                 if os.environ.get("PRO_TEST_DIE_AFTER_CLAIM"):
@@ -1205,7 +1238,7 @@ def cmd_show(a):
         p["may_summon"], p["skill"]))
     _, dropped = tools_to_allow(p["tools"], False, False)
     if dropped:
-        print("ignored tools (not in the safe allowlist): " + ", ".join(dropped))
+        print("ignored tools (not in the safe allowlist; pros summon %s --allow-persona-tools grants them): " % p["name"] + ", ".join(dropped))
     print("\n" + p["body"].strip()[:1500])
     return 0
 
@@ -1303,10 +1336,10 @@ def installed_core() -> bool:
 
 
 def cmd_summon(a):
-    return summon(a.name, a.scope, a.mode, a.model)
+    return summon(a.name, a.scope, a.mode, a.model, a.allow_persona_tools)
 
 
-def summon(name, scope, mode, model):
+def summon(name, scope, mode, model, allow_tools=False):
     check_name(name)
     c = cfg()
     mdir = marketplace_dir()
@@ -1364,7 +1397,7 @@ def summon(name, scope, mode, model):
             owned = (workdir / ".pro-owned").is_file()
             explicit = mode is not None
             mode = mode or c["default_mode"]
-            settings, dropped, sandboxed = build_settings(persona, explicit, mode)
+            settings, dropped, sandboxed = build_settings(persona, explicit or allow_tools, mode)
             sfile = run_dir("settings", s + ".json")
             write_json(sfile, settings)
             pfile = run_dir("prompts", s + ".md")
@@ -1395,7 +1428,7 @@ def summon(name, scope, mode, model):
                 die("tmux could not start the session: " + (r.stderr or r.stdout).strip(), 5)
             write_json(run_dir("sessions", s + ".json"), {
                 "session": s, "name": name, "scope": scope, "project": str(project), "workdir": str(workdir),
-                "summoner": summoner, "depth": depth, "started": now(), "persona_hash": sha(persona["skill"]), "mode": mode,
+                "summoner": summoner, "depth": depth, "started": now(), "persona_hash": sha(persona["skill"]), "mode": mode, "allow_persona_tools": bool(allow_tools),
                 "sandbox": sandboxed, "dropped_tools": dropped, "owned": owned})
             write_json(run_dir("state", s + ".json"), {"state": "starting", "last_activity": now(), "blocks": 0})
             with open(log_path, "a") as f:
@@ -1856,7 +1889,7 @@ def validate_persona(plugin_dir: Path, skill: Path):
         errs.append("tools is missing, e.g. tools: Read, Grep")
     else:
         for t in tools_to_allow(tools, True, False)[1]:
-            warns.append("tool %r is outside the safe allowlist and is ignored unless the user summons with an explicit --mode" % t)
+            warns.append("tool %r is outside the safe allowlist and is ignored unless the user summons with --allow-persona-tools (or an explicit --mode)" % t)
     if fm.get("model", "sonnet") not in ("sonnet", "opus", "haiku", "inherit", ""):
         errs.append("model must be sonnet, opus, haiku or inherit")
     if "may_summon" in fm and not isinstance(fm["may_summon"], bool):
@@ -2042,6 +2075,8 @@ def build_parser():
     sp.add_argument("--scope", choices=["project", "global"])
     sp.add_argument("--mode")
     sp.add_argument("--model")
+    sp.add_argument("--allow-persona-tools", action="store_true",
+                    help="grant every tool in the persona's tools line (your explicit choice), keeping the default permission mode")
     sp = add("team", cmd_team)
     sp.add_argument("--json", action="store_true")
     sp = add("send", cmd_send)

@@ -243,5 +243,79 @@ class Reliability1(ProTestCase):
         self.assertFalse([d for d in settings["deny"] if self.proj in d])  # nothing under the project is denied
 
 
+class AutoReply(ProTestCase):
+    """The final message of a turn answers the one open task, so replies never depend on a Bash rule."""
+
+    def session(self, name):
+        return [s for s in self.sessions_alive() if s.startswith("pro-" + name)][0]
+
+    def test_final_message_becomes_the_reply(self):
+        self.summon("alpha")
+        r = self.ok("ask", "alpha", "FINAL the multi-line\nanswer with `ticks`\nNOREPLY", "--wait", "20")
+        self.assertIn("kind=reply", r.stdout)
+        self.assertIn("auto-reply from the final message", r.stdout)
+        self.assertIn("the multi-line", r.stdout)
+        task = [m for m in self.msgs() if m["kind"] == "task"][0]
+        self.assertEqual((task["state"], task["answered_by"]), ("answered", "auto-reply"))
+        self.assertTrue([m for m in self.msgs() if m["kind"] == "reply"][0]["auto_reply"])
+
+    def test_explicit_reply_is_not_doubled(self):
+        self.summon("alpha")
+        self.ok("ask", "alpha", "ECHO explicit", "--wait", "20")
+        time.sleep(1)
+        self.assertEqual(len([m for m in self.msgs() if m["kind"] == "reply"]), 1)
+
+    def test_no_auto_reply_while_a_delegation_is_pending(self):
+        self.summon("alpha")
+        self.summon("beta")
+        task = self.task_of(self.ok("send", "alpha", "SEND beta NOREPLY\nFINAL delegated, waiting\nNOREPLY").stdout)
+        self.wait_until(lambda: any(m["to"] == "beta" for m in self.msgs()), 10, "delegated")
+        time.sleep(2)
+        self.assertEqual([m for m in self.msgs() if m["kind"] == "reply" and m["task"] == task], [])
+
+    def test_no_auto_reply_when_two_tasks_are_open(self):
+        self.summon("alpha")
+        self.ok("send", "alpha", "NOREPLY")  # stays open: no final message, no explicit reply
+        self.wait_until(lambda: any(m["state"] == "injected" for m in self.msgs()), 10, "first open")
+        t2 = self.task_of(self.ok("send", "alpha", "FINAL which task is this?\nNOREPLY").stdout)
+        self.wait_until(lambda: len([m for m in self.msgs() if m["state"] == "injected"]) == 2, 10, "second open")
+        time.sleep(1.5)
+        self.assertEqual([m for m in self.msgs() if m["kind"] == "reply"], [])
+
+    def test_auto_reply_can_be_switched_off(self):
+        self.config({"auto_reply": False})
+        self.summon("alpha")
+        self.ok("send", "alpha", "FINAL x\nNOREPLY")
+        time.sleep(2)
+        self.assertEqual([m for m in self.msgs() if m["kind"] == "reply"], [])
+
+    def test_auto_reply_reaches_a_pro_asker(self):
+        self.summon("alpha")
+        self.summon("beta")
+        task = self.task_of(self.ok("send", "beta", "FINAL beta says hi\nNOREPLY", as_pro="alpha").stdout)
+        self.wait_until(lambda: any(m["kind"] == "reply" and m["to"] == "alpha" and m["state"] in ("injected", "answered") for m in self.msgs()), 20, "reply delivered to alpha")
+
+
+class AllowPersonaTools(ProTestCase):
+    def settings(self):
+        s = self.sessions_alive()[0]
+        return json.load(open(os.path.join(self.fakedir, s + ".argv.json")))
+
+    def test_default_drops_and_flag_grants_without_changing_mode(self):
+        r = self.summon("alpha")
+        self.assertIn("ignored-tools=Bash(rm -rf /)", r.stdout)
+        self.assertNotIn("Bash(rm -rf /)", json.loads(self.settings()["--settings"])["permissions"]["allow"])
+        self.ok("stop", "alpha")
+        r = self.summon("alpha", "--allow-persona-tools")
+        self.assertNotIn("ignored-tools", r.stdout)
+        info = self.settings()
+        perms = json.loads(info["--settings"])["permissions"]
+        self.assertIn("Bash(rm -rf /)", perms["allow"])
+        self.assertEqual(perms["defaultMode"], "dontAsk")
+        self.assertIn("dontAsk", info["argv"])
+        self.assertTrue(any(d.startswith("Read(~/.ssh") for d in perms["deny"]))  # deny rules still apply
+        self.assertIn("--allow-persona-tools", self.ok("show", "alpha").stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

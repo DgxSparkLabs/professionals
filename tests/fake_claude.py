@@ -195,7 +195,7 @@ class Session:
             self.draw()
             out = self.hook("userpromptsubmit", {"prompt": text})
             m = re.search(r"\[pro-msg id=(m-[0-9a-f]+) from=(\S+) to=(\S+) task=(\S+) kind=(\S+)", text)
-            reply, noreply = [], False
+            reply, noreply, final = [], False, ""
             if m:
                 mid, frm, to, task, kind = m.groups()
                 self.log("ACT %s%s" % (mid, " dup" if "possible duplicate" in text else ""))
@@ -213,6 +213,8 @@ class Session:
                         who, _, t = rest.partition(" ")
                         r = subprocess.run([sys.executable, PRO, "ask", who, t, "--wait", "5"], capture_output=True, text=True)
                         reply.append("ask-exit=%d %s" % (r.returncode, (r.stdout + r.stderr).replace("\n", " ")[:200]))
+                    elif cmd == "FINAL":
+                        final = rest
                     elif cmd == "NOREPLY":
                         noreply = True
                     elif cmd == "CRASH":
@@ -224,7 +226,7 @@ class Session:
                 self.log("MIDTURN " + t[:40])
             self.midturn = []
             self.working = False
-            out = self.hook("stop", {"stop_hook_active": active, "last_assistant_message": "ok"})
+            out = self.hook("stop", {"stop_hook_active": active, "last_assistant_message": final})
             try:
                 d = json.loads(out) if out.strip() else {}
             except ValueError:

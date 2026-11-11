@@ -24,7 +24,7 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros list` | List professionals in the marketplace |
 | `pros search <words> [--tag t] [--online]` | Find professionals by words or tag; `--online` reads the marketplace from GitHub |
 | `pros show <name>` | Show one definition: scope, out of scope, tools |
-| `pros summon <name> [--scope project\|global] [--mode M] [--model M]` | Start the professional, or reuse the live one |
+| `pros summon <name> [--scope project\|global] [--mode M] [--model M] [--allow-persona-tools]` | Start the professional, or reuse the live one |
 | `pros team` | Live professionals with state, current task and summoner |
 | `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note]` | Send a message; queued if the target is busy |
 | `pros read <id>` | Read a message that arrived as a pointer |
@@ -61,7 +61,7 @@ Every message the CLI delivers starts with one header line, written by the CLI f
 ## Habits
 
 1. **Know your limits.** Before working, check the task against your scope. If part of it is outside, delegate that part or decline it with a reason. Never fake expertise.
-2. **Reply with the task id.** Answer with `pros reply <task> - <<'EOF'` (answer text, then a line `EOF`). Keep the answer short, with the evidence and what you did not check.
+2. **Reply with the task id.** Answer with `pros reply <task> - <<'EOF'` (answer text, then a line `EOF`). If you end your turn with exactly one open task and nothing delegated, your final message is sent as the reply automatically. Keep the answer short, with the evidence and what you did not check.
 3. **Never block for more than 90 seconds.** A tool call that waits longer can be killed.
    - If you are a professional, use `pros send` and carry on. The reply arrives as a new message after your turn.
    - If you are a plain session, use `pros ask` (it waits up to 90 s). On timeout run `pros wait <task>` again or `pros inbox` later.
