@@ -1,0 +1,119 @@
+{
+  "name": "professionals",
+  "owner": {
+    "name": "DgxSparkLabs"
+  },
+  "metadata": {
+    "description": "A marketplace of AI specialists that summon and delegate to each other.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "professionals",
+      "source": "./plugins/professionals",
+      "description": "Core system: the pros command and the skill that lets any Claude session list, summon, message, delegate to and create professionals.",
+      "version": "0.1.0",
+      "category": "core",
+      "tags": [
+        "core",
+        "delegation",
+        "tmux"
+      ]
+    },
+    {
+      "name": "pro-system-designer",
+      "source": "./plugins/pro-system-designer",
+      "description": "System designer: turns a goal into components, interfaces, data flow, failure modes and trade-offs.",
+      "version": "0.1.0",
+      "category": "builder",
+      "tags": [
+        "design",
+        "architecture"
+      ]
+    },
+    {
+      "name": "pro-reliability-reviewer",
+      "source": "./plugins/pro-reliability-reviewer",
+      "description": "Reliability reviewer: hunts failure cases, dead hangs, races and missing deadlines before they bite.",
+      "version": "0.1.0",
+      "category": "builder",
+      "tags": [
+        "review",
+        "reliability",
+        "testing"
+      ]
+    },
+    {
+      "name": "pro-docs-designer",
+      "source": "./plugins/pro-docs-designer",
+      "description": "Docs designer: READMEs and guides that explain at a glance, with diagrams.",
+      "version": "0.1.0",
+      "category": "builder",
+      "tags": [
+        "docs",
+        "readme",
+        "diagrams"
+      ]
+    },
+    {
+      "name": "pro-voice-pipeline-engineer",
+      "source": "./plugins/pro-voice-pipeline-engineer",
+      "description": "Voice pipeline engineer: real-time voice agents, VAD, end-of-turn detection, barge-in, latency budgets, STT and TTS.",
+      "version": "0.1.0",
+      "category": "domain",
+      "tags": [
+        "voice",
+        "realtime",
+        "stt",
+        "tts"
+      ]
+    },
+    {
+      "name": "pro-linux-ops",
+      "source": "./plugins/pro-linux-ops",
+      "description": "Linux ops: systemd units, hardening, timers, journald, virtual machines.",
+      "version": "0.1.0",
+      "category": "domain",
+      "tags": [
+        "linux",
+        "systemd",
+        "ops"
+      ]
+    },
+    {
+      "name": "pro-speckit-driver",
+      "source": "./plugins/pro-speckit-driver",
+      "description": "Spec-kit driver: runs specify, clarify, plan, tasks, analyze and implement in order with checks.",
+      "version": "0.1.0",
+      "category": "domain",
+      "tags": [
+        "spec-kit",
+        "process",
+        "planning"
+      ]
+    },
+    {
+      "name": "pro-exhaustive-researcher",
+      "source": "./plugins/pro-exhaustive-researcher",
+      "description": "Exhaustive researcher: covers a topic completely, counts coverage, dates every source.",
+      "version": "0.1.0",
+      "category": "domain",
+      "tags": [
+        "research",
+        "sources"
+      ]
+    },
+    {
+      "name": "pro-professional-smith",
+      "source": "./plugins/pro-professional-smith",
+      "description": "Professional smith: creates, trains, validates and publishes new professionals.",
+      "version": "0.1.0",
+      "category": "builder",
+      "tags": [
+        "meta",
+        "authoring",
+        "publishing"
+      ]
+    }
+  ]
+}

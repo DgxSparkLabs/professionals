@@ -1,0 +1,10 @@
+{
+  "name": "NAME",
+  "description": "One line: what this professional does.",
+  "version": "0.1.0",
+  "author": {
+    "name": "YOUR-NAME"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/DgxSparkLabs/professionals"
+}

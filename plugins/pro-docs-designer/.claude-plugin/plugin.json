@@ -1,0 +1,10 @@
+{
+  "name": "pro-docs-designer",
+  "description": "Docs designer: READMEs and guides that explain at a glance, with diagrams.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/DgxSparkLabs/professionals"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "pro-exhaustive-researcher",
+  "description": "Exhaustive researcher: covers a topic completely, counts coverage, dates every source.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/DgxSparkLabs/professionals"
+}

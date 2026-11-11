@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" width="900" height="420" role="img" aria-labelledby="t d">
+  <title id="t">How Professionals works</title>
+  <desc id="d">You and your Claude session summon, ask and delegate to specialist professionals on a shared team, and publish new ones to the marketplace.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect width="900" height="420" rx="14" fill="#f8fafc" stroke="#cbd5e1"/>
+  <!-- you -->
+  <rect x="30" y="150" width="190" height="110" rx="12" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <text x="125" y="190" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="700" fill="#0f172a">You</text>
+  <text x="125" y="214" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#1e293b">your Claude session</text>
+  <text x="125" y="236" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#1e293b">+ the pros command</text>
+  <!-- team -->
+  <rect x="320" y="40" width="320" height="260" rx="12" fill="#ecfccb" stroke="#65a30d" stroke-width="2"/>
+  <text x="480" y="68" text-anchor="middle" font-family="sans-serif" font-size="16" font-weight="700" fill="#0f172a">The team (shared, live)</text>
+  <rect x="345" y="85" width="130" height="50" rx="8" fill="#ffffff" stroke="#4d7c0f"/>
+  <text x="410" y="115" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#0f172a">system-designer</text>
+  <rect x="485" y="85" width="130" height="50" rx="8" fill="#ffffff" stroke="#4d7c0f"/>
+  <text x="550" y="115" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#0f172a">reliability-reviewer</text>
+  <rect x="345" y="155" width="130" height="50" rx="8" fill="#ffffff" stroke="#4d7c0f"/>
+  <text x="410" y="185" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#0f172a">docs-designer</text>
+  <rect x="485" y="155" width="130" height="50" rx="8" fill="#ffffff" stroke="#4d7c0f"/>
+  <text x="550" y="185" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#0f172a">linux-ops</text>
+  <rect x="345" y="225" width="270" height="50" rx="8" fill="#ffffff" stroke="#4d7c0f" stroke-dasharray="5 4"/>
+  <text x="480" y="255" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#0f172a">...and any professional you add</text>
+  <!-- marketplace -->
+  <rect x="700" y="150" width="170" height="110" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="785" y="190" text-anchor="middle" font-family="sans-serif" font-size="18" font-weight="700" fill="#0f172a">Marketplace</text>
+  <text x="785" y="214" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#1e293b">public GitHub repo</text>
+  <text x="785" y="236" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#1e293b">one plugin each</text>
+  <!-- arrows -->
+  <line x1="222" y1="190" x2="318" y2="150" stroke="#334155" stroke-width="2.5" marker-end="url(#a)"/>
+  <text x="250" y="150" font-family="sans-serif" font-size="13" font-weight="700" fill="#0f172a">summon</text>
+  <line x1="318" y1="215" x2="222" y2="225" stroke="#334155" stroke-width="2.5" marker-end="url(#a)"/>
+  <text x="240" y="250" font-family="sans-serif" font-size="13" font-weight="700" fill="#0f172a">answers</text>
+  <path d="M410 83 C410 60 550 60 550 83" fill="none" stroke="#334155" stroke-width="2" marker-end="url(#a)"/>
+  <text x="480" y="52" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#0f172a">delegate</text>
+  <line x1="642" y1="205" x2="698" y2="205" stroke="#334155" stroke-width="2.5" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="670" y="195" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#0f172a">find</text>
+  <path d="M785 262 C785 350 125 350 125 262" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a)"/>
+  <text x="455" y="345" text-anchor="middle" font-family="sans-serif" font-size="13" font-weight="700" fill="#0f172a">publish a new professional when nobody fits, then everyone can use it</text>
+  <text x="450" y="395" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#334155">Each professional is a live session. They message each other with `pros send` and `pros ask`.</text>
+</svg>

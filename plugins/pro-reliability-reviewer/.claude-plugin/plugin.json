@@ -1,0 +1,10 @@
+{
+  "name": "pro-reliability-reviewer",
+  "description": "Reliability reviewer: hunts failure cases, dead hangs, races and missing deadlines before they bite.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/DgxSparkLabs/professionals"
+}

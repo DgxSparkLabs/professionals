@@ -1,0 +1,10 @@
+{
+  "name": "pro-speckit-driver",
+  "description": "Spec-kit driver: runs specify, clarify, plan, tasks, analyze and implement in order with checks.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/DgxSparkLabs/professionals"
+}

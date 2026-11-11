@@ -1,0 +1,10 @@
+{
+  "name": "pro-voice-pipeline-engineer",
+  "description": "Voice pipeline engineer: real-time voice agents, VAD, end-of-turn detection, barge-in, latency budgets, STT and TTS.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/DgxSparkLabs/professionals"
+}

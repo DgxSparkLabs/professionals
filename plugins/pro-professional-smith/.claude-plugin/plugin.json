@@ -1,0 +1,10 @@
+{
+  "name": "pro-professional-smith",
+  "description": "Professional smith: creates, trains, validates and publishes new professionals.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/DgxSparkLabs/professionals"
+}
