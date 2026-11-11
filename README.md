@@ -20,6 +20,41 @@ Install the Professionals system for me: run `claude plugin marketplace add DgxS
 
 You need Claude Code 2.1.224 or newer, `tmux` and `python3`. If one is missing, `pros doctor` says which and how to install it.
 
+**Why it is safe:** everything runs on your machine, inside your own Claude Code permissions. Every request has a deadline, the number of live professionals is capped, and a message from a peer is a request, never an order. Details in [Safety and limits](#safety-and-limits).
+
+## 60-second tour
+
+Output below is from a real run (Claude Code, model sonnet), shortened.
+
+**1. Summon.** Start a specialist in its own live session.
+
+```
+$ pros summon reliability-reviewer --scope global
+```
+
+**2. Ask.** Send it a task and wait up to 90 seconds. The answer comes back tagged with the same task id.
+
+```
+$ pros ask reliability-reviewer "List 3 failure cases of a tmux message bus in one line each" --wait 90
+sent m-0b2f4c09d2 task=t-7279b8a7 status=queued
+[pro-msg id=m-b72b1ec540 from=reliability-reviewer to=user task=t-7279b8a7 kind=reply ...]
+1. Lost message: send-keys into a busy, copy-mode or dead pane drops or garbles the text, and the sender gets no ack (P0).
+2. Dead hang: the sender waits for a reply from a crashed or restarted session with no deadline and blocks forever (P1).
+3. Duplicate or reordered delivery: a restart or retry replays a message, with no idempotency key to stop an action running twice (P1).
+```
+
+**3. Delegate.** Give it a task with a part outside its scope. It hands that part to the right professional and combines the answers. Here `reliability-reviewer` sent the writing part to `docs-designer`; the message log shows the chain:
+
+```
+reliability-reviewer -> docs-designer task answered chain=reliability-reviewer>docs-designer
+docs-designer -> reliability-reviewer reply answered chain=reliability-reviewer>docs-designer
+reliability-reviewer -> user reply answered chain=reliability-reviewer
+```
+
+**4. Grow.** No professional fits your job? Say "Create a professional that audits systemd unit hardening" and your session summons `professional-smith`, which writes, tests and validates it. By hand: `pros new my-pro --purpose "..." --tags a,b`, then `pros validate my-pro`. (This step is not in the recorded run; see [Add your own professional](#add-your-own-professional).)
+
+Full recorded run: [tests/fixtures/real-run-1.md](tests/fixtures/real-run-1.md).
+
 ## The professionals
 
 | Professional | What it does | Install name |
@@ -43,24 +78,6 @@ Each one is also a plain skill, so you can install a single persona on its own: 
 4. **Grow.** No fit? `professional-smith` writes a new definition from the template, practices it on sample tasks, validates it and publishes it.
 
 Useful commands: `pros list`, `pros search <words>`, `pros team`, `pros attach <name>`, `pros stop <name>`, `pros doctor`. The full list is in the skill: `plugins/professionals/skills/professionals/SKILL.md`.
-
-## Example session
-
-```
-you> I need to add a retry queue to our worker. Get a review first.
-
-claude> pros summon reliability-reviewer
-        reliability-reviewer: ready (project scope, 14 s)
-claude> pros ask reliability-reviewer "Review worker/queue.py for failure cases" --wait 90
-        pending: pros wait t-41a2          (the reviewer is still reading)
-claude> pros wait t-41a2 --timeout 90
-        [pro-msg id=m-77 from=reliability-reviewer to=you task=t-41a2 kind=reply]
-        P0 queue.py:58  retry has no cap; a poison message loops forever. Test: send a failing item, expect 5 tries then dead-letter.
-        P1 queue.py:91  ack is written before the handler finishes; a crash loses the item.
-        P1 queue.py:120 two workers can claim one item (check then rename, no lock).
-        Not checked: the deployment unit file.
-        I can ask linux-ops about that. Want me to?
-```
 
 ## Safety and limits
 
