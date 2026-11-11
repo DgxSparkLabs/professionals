@@ -29,7 +29,7 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note]` | Send a message; queued if the target is busy |
 | `pros read <id>` | Read a message that arrived as a pointer |
 | `pros inbox` | Replies waiting for you (for sessions that are not professionals) |
-| `pros reply <task> <text>` | Answer a task by its id |
+| `pros reply <task> <text>` or `pros reply <task> - <<'EOF'` | Answer a task by its id. Use the quoted heredoc form for any text with backticks, quotes, `$` or newlines: Claude Code denies those inline |
 | `pros ask <to> <text> [--wait 90]` | Send a task and wait up to 90 s for the answer |
 | `pros wait <task> [--timeout 90]` | Keep waiting for an earlier ask; can be repeated |
 | `pros stop <name>` or `pros stop --all` | Stop one professional or all of them |
@@ -61,7 +61,7 @@ Every message the CLI delivers starts with one header line, written by the CLI f
 ## Habits
 
 1. **Know your limits.** Before working, check the task against your scope. If part of it is outside, delegate that part or decline it with a reason. Never fake expertise.
-2. **Reply with the task id.** Answer with `pros reply <task> "..."`. Keep the answer short, with the evidence and what you did not check.
+2. **Reply with the task id.** Answer with `pros reply <task> - <<'EOF'` (answer text, then a line `EOF`). Keep the answer short, with the evidence and what you did not check.
 3. **Never block for more than 90 seconds.** A tool call that waits longer can be killed.
    - If you are a professional, use `pros send` and carry on. The reply arrives as a new message after your turn.
    - If you are a plain session, use `pros ask` (it waits up to 90 s). On timeout run `pros wait <task>` again or `pros inbox` later.

@@ -135,7 +135,7 @@ class ProTestCase(unittest.TestCase):
 
     def sessions_alive(self):
         r = subprocess.run(["tmux", "-L", self.sock, "ls", "-F", "#{session_name}"], capture_output=True, text=True)
-        return r.stdout.split() if r.returncode == 0 else []
+        return [x for x in r.stdout.split() if x != "pros-pump"] if r.returncode == 0 else []
 
     def task_of(self, out):
         for tok in out.split():

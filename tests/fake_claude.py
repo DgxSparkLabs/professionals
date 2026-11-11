@@ -12,7 +12,7 @@ and obeys commands found in the message body, one per line:
   NOREPLY            do not call pro reply
   CRASH              exit abruptly
 Env switches: FAKE_TRUST=1 trust dialog first, FAKE_FAIL=1 exit at once,
-FAKE_LIMIT=1 usage-limit banner, FAKE_NOHOOKS=1 never call hooks.
+FAKE_LIMIT=1 usage-limit banner, FAKE_NOHOOKS=1 never call hooks, FAKE_IGNORE_ENTER=n|all swallow the first n (or every) Enter.
 Logs go to $FAKE_DIR/<session>.log: START, ACT <id> [dup], MIDTURN <text>.
 """
 import json
@@ -57,6 +57,8 @@ class Session:
         self.statusf = os.path.join(FAKE_DIR, self.name + ".status")
         self.buf, self.out, self.working, self.paste = "", [], False, None
         self.midturn = []
+        ie = os.environ.get("FAKE_IGNORE_ENTER", "0")
+        self.ignore_enter = -1 if ie == "all" else int(ie)
         self.sid = "fake-" + self.name
         info = {"argv": a, "env": {k: v for k, v in os.environ.items() if k.startswith("PRO_")}, "cwd": os.getcwd()}
         for flag in ("--settings", "--append-system-prompt-file"):
@@ -113,7 +115,7 @@ class Session:
                 if data.startswith("\x1b[200~", i):
                     self.paste, i = "", i + 6
                 elif data.startswith("\x1b[201~", i):
-                    self.buf += self.paste or ""
+                    self.buf += (self.paste or "").replace("\r\n", "\n").replace("\r", "\n")
                     self.paste, i = None, i + 6
                 elif data[i] == "\x1b":
                     i += 1
@@ -122,6 +124,12 @@ class Session:
                     i += 1
                 elif self.paste is not None:
                     self.paste += data[i]
+                    i += 1
+                elif data[i] == "\x15":  # Ctrl-U clears the input line
+                    self.buf = ""
+                    i += 1
+                elif data[i] in "\r" and self.buf.strip() and self.ignore_enter != 0:
+                    self.ignore_enter -= 1 if self.ignore_enter > 0 else 0  # swallowed Enter
                     i += 1
                 elif data[i] in "\r":
                     if self.buf.strip():

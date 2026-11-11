@@ -100,6 +100,7 @@ class Summon(ProTestCase):
             info = json.load(open(os.path.join(self.fakedir, sess["pro-" + n] + ".argv.json")))
             self.assertEqual(info["env"]["PRO_SELF"], n)
             self.assertEqual(info["env"]["PRO_SESSION"], sess["pro-" + n])
+            self.assertNotIn("PRO_CHAIN", info["env"])  # nothing reads it, so it is not set
         self.assertEqual(json.loads(self.ok("team", "--json").stdout)[1]["summoner"] in ("alpha", "user"), True)
 
     def test_may_summon_false_cannot_summon(self):
