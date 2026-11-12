@@ -41,17 +41,6 @@
    {
     "assignments": 1,
     "end_reason": "stopped",
-    "ended": 1800000042.35,
-    "kind": "fresh",
-    "parent_run": null,
-    "pro": "p-0000000000a1",
-    "run": "r-0000000000b1",
-    "session": "00000000-0000-4000-8000-000000000002",
-    "started": 1800000000.08
-   },
-   {
-    "assignments": 1,
-    "end_reason": "stopped",
     "ended": 1800000042.34,
     "kind": "fresh",
     "parent_run": null,
@@ -59,6 +48,17 @@
     "run": "r-0000000000b2",
     "session": "00000000-0000-4000-8000-000000000001",
     "started": 1800000000.46
+   },
+   {
+    "assignments": 1,
+    "end_reason": "stopped",
+    "ended": 1800000042.35,
+    "kind": "fresh",
+    "parent_run": null,
+    "pro": "p-0000000000a1",
+    "run": "r-0000000000b1",
+    "session": "00000000-0000-4000-8000-000000000002",
+    "started": 1800000000.08
    }
   ],
   "page": {

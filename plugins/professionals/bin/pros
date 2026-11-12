@@ -3195,10 +3195,13 @@ def cmd_doctor(a):
 
 
 def cmd_audit(a):
-    """`pros audit status|summary|trace|explain|import|serve`: the local audit, owner only (lib/pros_audit/, docs/spec/audit/)."""
-    sys.path.insert(0, str(Path(os.path.realpath(__file__)).parent.parent / "lib"))
+    """`pros audit status|summary|trace|explain|import|serve|verdict|rubric|export`: the local audit, owner only (lib/pros_audit/, docs/spec/audit/)."""
+    require_user("use the audit commands", "a professional session cannot read or write the audit")
+    lib = str(Path(os.path.realpath(__file__)).parent.parent / "lib")
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
     from pros_audit import cli
-    check = lambda what: require_user(what, "a professional session cannot read the audit")
+    check = lambda what: require_user(what, "a professional session cannot read or write the audit")
     fixed = os.environ.get("PRO_AUDIT_NOW")  # test hook: a fixed clock, so fixture answers are reproducible
     return cli.main(a.rest, pro_home(), check, now=(lambda: float(fixed)) if fixed else None)
 
@@ -3311,7 +3314,7 @@ def build_parser():
     sp = add("doctor", cmd_doctor)
     sp.add_argument("--link", action="store_true")
     sp.add_argument("--repair", action="store_true", help="user only: restore a corrupt registry from its backup, or accept a hand-edited one")
-    sp = add("audit", cmd_audit, help="read the local audit (user only): status, summary, trace, explain")
+    sp = add("audit", cmd_audit, help="the local audit (user only): status, summary, trace, explain, import, serve, verdict, rubric, export")
     sp.add_argument("rest", nargs=argparse.REMAINDER)
     sp = add("hook", cmd_hook, help=argparse.SUPPRESS)
     sp.add_argument("event")

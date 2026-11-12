@@ -318,6 +318,10 @@ class Importer(Tmp):
         self.assertEqual(table_hash_event(db), h1)
         self.assertEqual(db.execute("SELECT count(*) FROM event WHERE action != 'audit_import'").fetchone()[0], 26)
         self.assertEqual(db.execute("SELECT generation FROM store_state").fetchone()[0], 4)  # one bump per transaction: batch flush + final, twice
+        # step E: audit_evaluation events from the spool are projected into `evaluation` inside the final import transaction, once
+        n_ev = sum(1 for x in lines if '"audit_evaluation"' in x)
+        self.assertEqual(db.execute("SELECT count(*) FROM evaluation").fetchone()[0], n_ev)
+        self.assertEqual((r["evaluations_projected"], r2["evaluations_projected"]), (n_ev, 0))
         db.close()
 
     def test_id_conflict_is_recorded_not_dropped(self):

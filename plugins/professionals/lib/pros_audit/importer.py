@@ -242,18 +242,21 @@ def drain(home):
                 data["purged_skipped"] = run.skipped
             ev = {"v": 1, "id": wid + "-1", "t": round(fin, 3), "action": "audit_import", "actor": "importer", "origin": "live", "data": data}
             conn.execute("BEGIN IMMEDIATE")
+            g0 = conn.execute("SELECT generation FROM store_state").fetchone()[0]
+            from . import evaluation as EV
+            projected = EV.project_missing(conn, in_tx=True)  # audit_evaluation events from the spool become evaluation rows, same transaction
             conn.execute("INSERT INTO event (id, payload_sha, t, action, actor, origin, provenance, pro, run, session, msg, data, batch) VALUES (?,?,?,?,?,?,NULL,NULL,NULL,NULL,NULL,?,?)",
                          (ev["id"], canonical_sha(ev), ev["t"], ev["action"], "importer", "live", json.dumps(data, sort_keys=True), batch))
             conn.execute("UPDATE import_batch SET finished=?, spool_files=?, events=?, duplicates=?, conflicts=?, purged_skipped=?, gaps=?, last_seq=? WHERE batch=?",
                          (fin, len(files), run.events, run.dups, run.conflicts, run.skipped, run.gaps, run.last_seq, batch))
-            conn.execute("UPDATE store_state SET generation = generation + 1")
+            conn.execute("UPDATE store_state SET generation = ?", (g0 + 1,))  # evaluation triggers bump per row; the contract is one per transaction
             conn.execute("COMMIT")
             for p in done:
                 with contextlib.suppress(OSError):
                     os.unlink(p)
             with contextlib.suppress(Exception):
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            return {"batch": batch, "spool_files": len(files), "events": run.events, "duplicates": run.dups, "conflicts": run.conflicts,
+            return {"batch": batch, "evaluations_projected": projected, "spool_files": len(files), "events": run.events, "duplicates": run.dups, "conflicts": run.conflicts,
                     "gaps": run.gaps, "purged_skipped": run.skipped, "last_seq": run.last_seq, "seconds": round(fin - t0, 3)}
         finally:
             conn.close()

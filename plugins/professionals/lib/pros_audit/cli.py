@@ -1,11 +1,19 @@
-"""`pros audit ...` commands (docs/spec/audit/query.md section 4). Thin: every figure comes from query.Query; text is rendered from the same envelope as --json."""
+"""`pros audit ...` commands. Read side (D3, docs/spec/audit/query.md section 4): status, summary, trace, explain, import, serve; every figure
+comes from query.Query and text is rendered from the same envelope as --json. Write side (D4): verdict, rubric add, export.
+One parser; bin/pros has already run require_user, and main() checks again before any store access."""
 import argparse
 import datetime
 import json
 import os
+import sqlite3
 import sys
+import time
 
+from . import evaluation as ev
+from . import export as ex
 from . import query as Q
+
+EVAL_SUBS = ("verdict", "rubric", "export")
 
 EXIT = {"bad_request": 2, "too_large": 2, "not_found": 3, "forbidden": 4, "unauthorized": 4, "store_unavailable": 5}
 
@@ -99,7 +107,7 @@ def render_status(env):
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="pros audit", description="read the local audit")
+    p = argparse.ArgumentParser(prog="pros audit", description="the local audit: read (status, summary, trace, explain, serve), import, verdicts and export")
     sub = p.add_subparsers(dest="sub", required=True)
     for name in ("status", "summary", "trace", "explain", "import", "serve"):
         sp = sub.add_parser(name)
@@ -120,6 +128,11 @@ def build_parser():
         if name == "serve":
             sp.add_argument("--port", type=int, default=0)
             sp.add_argument("--rotate", action="store_true")
+        if name == "import":
+            sp.add_argument("--backfill", action="store_true", help="also import the surviving history (msgs, sessions) once")
+            sp.add_argument("--no-usage", action="store_true", help="skip reading transcripts")
+            sp.add_argument("--json", action="store_true")
+    _add_eval(sub)
     return p
 
 
@@ -131,14 +144,11 @@ def main(argv, home, require_user, now=None, out=None, err=None):
         require_user("read the audit")
     except SystemExit:
         raise
-    q = Q.Query(store_path(home), owner_check=lambda: require_user("read the audit") or True, now=now)
+    if args.sub in EVAL_SUBS:
+        return run(argv, home, out, err, None, now() if callable(now) else now)
     if args.sub == "import":
-        try:
-            from . import importer
-        except ImportError:
-            print("pros: the audit importer is not part of this build", file=err)
-            return 2
-        return importer.run_once(home) or 0
+        return run_import(home, args, out)
+    q = Q.Query(store_path(home), owner_check=lambda: require_user("read the audit") or True, now=now)
     if args.sub == "serve":
         from . import http as H
         return H.serve_cli(q, home, args.port, args.rotate, out)
@@ -159,5 +169,172 @@ def main(argv, home, require_user, now=None, out=None, err=None):
     return 0
 
 
+def run_import(home, args, out):
+    """Spool -> store (idempotent), project evaluations, optional backfill, then usage from transcripts (rebuilds the derived tables)."""
+    from . import importer
+    res = {"spool": importer.drain(home)}
+    if args.backfill:
+        from . import backfill
+        res["backfill"] = backfill.backfill(home)
+    if not args.no_usage:
+        from . import usage
+        res["usage"] = usage.import_usage(home)
+    if args.json:
+        print(json.dumps(res, sort_keys=True, default=str), file=out)
+    else:
+        sp = res["spool"]
+        print("imported %s events from %s spool files%s" % (sp.get("events", 0), sp.get("spool_files", 0), " (%s)" % sp["skipped"] if "skipped" in sp else ""), file=out)
+        for k in ("backfill", "usage"):
+            if k in res:
+                print("%s: %s" % (k, ", ".join("%s %s" % kv for kv in sorted(res[k].items()) if not isinstance(kv[1], (dict, list)))), file=out)
+    return 0
+
+
 def _clean(args, keys):
     return {k: getattr(args, k) for k in keys if getattr(args, k, None) is not None}
+
+
+def open_db(home):
+    p = os.path.join(str(home), "audit", "audit.db")
+    if not os.path.exists(p):
+        raise ev.EvalError("no audit store yet (capture has not recorded anything)", "not_found")
+    conn = sqlite3.connect(p, timeout=5.0, isolation_level=None)
+    conn.execute("PRAGMA busy_timeout=5000")
+    if not conn.execute("SELECT count(*) FROM sqlite_master WHERE name='schema_version'").fetchone()[0]:
+        raise ev.EvalError("the audit store is not initialised", "not_found")
+    return conn
+
+
+def _add_eval(sub):
+    """D4 subcommands: verdict, rubric add, export (owner only; bin/pros has run require_user)."""
+    v = sub.add_parser("verdict", help="record an evaluation of a task or assignment (owner only)")
+    v.add_argument("target", help="message id m-<10 hex>")
+    v.add_argument("--status", required=True, choices=["passed", "partial", "failed", "inconclusive"])
+    v.add_argument("--criterion", action="append", default=[], help="ID=passed|failed|not_assessed[@kind:token] (repeat)")
+    v.add_argument("--rest", choices=["passed", "failed", "not_assessed"], help="outcome for rubric criteria not listed")
+    v.add_argument("--rubric", help="rubric name (default: ad-hoc)")
+    v.add_argument("--rubric-version", help="needed only when the rubric has several versions")
+    v.add_argument("--evidence", action="append", default=[], help="opaque kind:token reference (repeat)")
+    v.add_argument("--attach", action="append", default=[], help="LABEL=PATH: an existing test or check result, stored only as check-run:LABEL.<hash>")
+    v.add_argument("--evaluator", default="owner")
+    v.add_argument("--effective-at", type=float)
+    v.add_argument("--supersedes", help="evaluation id to supersede (default: the current effective one)")
+    v.add_argument("--no-supersede", action="store_true")
+    v.add_argument("--kind", choices=["task", "assignment"], dest="target_kind")
+    v.add_argument("--json", action="store_true")
+    r = sub.add_parser("rubric", help="rubric files (owner only)")
+    rs = r.add_subparsers(dest="rsub", required=True)
+    ra = rs.add_parser("add")
+    ra.add_argument("name")
+    ra.add_argument("version")
+    ra.add_argument("--criterion", action="append", required=True, help="ID or ID:optional (repeat)")
+    e = sub.add_parser("export", help="write an export (redacted by default)")
+    e.add_argument("--redact", action="store_true", help="redacted export (the default)")
+    e.add_argument("--raw", action="store_true", help="raw export with real ids: separate, explicit")
+    e.add_argument("--confirm", help="typed confirmation for --raw: the word raw")
+    e.add_argument("--format", choices=["jsonl", "csv", "html"], default="jsonl")
+    e.add_argument("--since")
+    e.add_argument("--until")
+    e.add_argument("--out")
+    e.add_argument("--yes", action="store_true", help="write without asking (scripts)")
+    e.add_argument("--preview", action="store_true", help="print the preview and stop")
+    e.add_argument("--json", action="store_true")
+
+
+def _crit(items):
+    out = []
+    for it in items:
+        ref = None
+        if "@" in it:
+            it, ref = it.split("@", 1)
+        if "=" not in it:
+            raise ev.EvalError("--criterion needs ID=outcome")
+        cid, out_ = it.split("=", 1)
+        out.append((cid, out_, ref) if ref else (cid, out_))
+    return out
+
+
+def run(argv, home, out=None, err=None, stdin=None, now=None):
+    """The write side (verdict, rubric add, export). `now` is a number here (main() turns its clock into one)."""
+    out, err = out or sys.stdout, err or sys.stderr
+    try:
+        a = build_parser().parse_args(argv)
+    except SystemExit as e:
+        return 2 if e.code else 0
+    if a.sub not in EVAL_SUBS:
+        print("pros: %s is a read command; use main()" % a.sub, file=err)
+        return 2
+    try:
+        if a.sub == "rubric":
+            crit = [(c.split(":")[0], not c.endswith(":optional")) for c in a.criterion]
+            path = ev.rubric_add(home, a.name, a.version, crit)
+            print("rubric %s %s written" % (a.name, a.version), file=out)
+            return 0
+        conn = open_db(home)
+        try:
+            if a.sub == "verdict":
+                return _verdict(a, conn, home, out, now)
+            return _export(a, conn, home, out, err, stdin, now)
+        finally:
+            conn.close()
+    except (ev.EvalError, ex.ExportError) as e:
+        print("pros: %s" % e, file=err)
+        return 3 if getattr(e, "code", "") == "not_found" else 2
+
+
+def _verdict(a, conn, home, out, now):
+    refs = list(a.evidence)
+    for item in a.attach:
+        label, _, path = item.partition("=")
+        refs.append(ev.evidence_ref_for_file(label, path))
+    sup = None if a.no_supersede else (a.supersedes or "auto")
+    e = ev.record_verdict(conn, home, a.target, a.status, _crit(a.criterion), rubric=a.rubric, rubric_version=a.rubric_version, evidence=refs,
+                          evaluator=a.evaluator, effective_at=a.effective_at, supersedes=sup, target_kind=a.target_kind, rest=a.rest, now=now)
+    d = e["data"]
+    best, _ = ev.effective(ev.evaluations(conn, a.target), None)
+    if a.json:
+        print(json.dumps({"eval": d["eval"], "status": d["status"], "supersedes": d["supersedes"], "effective": best["eval"] if best else None}), file=out)
+    else:
+        print("recorded %s: %s for %s%s; effective now: %s" % (d["eval"], d["status"], a.target, " (supersedes %s)" % d["supersedes"] if d["supersedes"] else "", best["eval"] if best else "none"), file=out)
+    return 0
+
+
+def _export(a, conn, home, out, err, stdin, now):
+    now = time.time() if now is None else now
+    since, until = ex.parse_when(a.since, now), ex.parse_when(a.until, now)
+    raw = a.raw
+    if raw and a.redact:
+        raise ex.ExportError("choose --raw or --redact, not both")
+    pv = ex.preview(conn, since, until, now)
+    mode = "raw" if raw else "redacted"
+    dest = a.out or os.path.join(os.getcwd(), "pros-audit-export")
+    print("export preview: mode %s, format %s, destination %s, cutoff %s" % (mode, a.format, dest, pv["cutoff"]), file=out)
+    for k, n in pv["counts"].items():
+        print("  %s: %d rows" % (k, n), file=out)
+    if a.preview:
+        return 0
+    src = stdin if stdin is not None else (sys.stdin if sys.stdin.isatty() else None)
+    if raw:
+        if (a.confirm or "").strip().lower() != "raw":
+            if src is None:
+                print("pros: a raw export needs --confirm raw (typed confirmation); --yes is not enough", file=err)
+                return 2
+            print("type raw to write an export with real ids: ", end="", file=out)
+            if src.readline().strip().lower() != "raw":
+                print("not confirmed; nothing written", file=err)
+                return 2
+    elif not a.yes:
+        if src is None:
+            print("pros: nothing written; add --yes to confirm the preview", file=err)
+            return 2
+        print("write it? [y/N] ", end="", file=out)
+        if src.readline().strip().lower() not in ("y", "yes"):
+            print("nothing written", file=err)
+            return 2
+    degraded = os.path.exists(os.path.join(str(home), "audit", "degraded.json"))
+    m = ex.write_export(conn, dest, a.format, raw, since, until, now, degraded)
+    if a.json:
+        print(json.dumps(m, sort_keys=True), file=out)
+    else:
+        print("export %s written to %s (%d files + manifest.json)" % (m["export"], dest, len(m["files"])), file=out)
+    return 0
