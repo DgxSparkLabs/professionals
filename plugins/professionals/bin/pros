@@ -47,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -61,7 +61,7 @@ DEFAULTS = {
     "stuck_min": 10, "default_mode": "dontAsk", "model": "", "summon_budget_per_hour": 20,
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
     "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
-    "publish_guard": "", "resume_max_days": 14,
+    "publish_guard": "", "resume_max_days": 14, "max_resends": 1,
 }
 DEFAULT_DENY = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/.netrc", "~/.claude/.credentials.json"]
 
@@ -1555,7 +1555,8 @@ def current_task(me, task=None):
     return best
 
 
-def do_send(to, body, task=None, kind="task", reply_to=None):
+def do_send(to, body, task=None, kind="task", reply_to=None, wake=False):
+    """Store and deliver one message.  wake=True (B3): an allowlisted target that is not running is started (cap-checked)."""
     me = self_name()
     if to != "user":
         check_name(to, "recipient")
@@ -1570,9 +1571,13 @@ def do_send(to, body, task=None, kind="task", reply_to=None):
         except Fail:
             audit_refused("not_allowed", to, task)
             raise
+    waking = False
     if to != "user" and not find_session(to):
-        audit_refused("no_target", to, task)
-        die("%s is not running; summon it first: pros summon %s" % (to, to), 5)
+        if not wake:
+            audit_refused("no_target", to, task)
+            die("%s is not running; summon it first: pros summon %s" % (to, to), 5)
+        wake_precheck(to, task)
+        waking = True
     parent = current_task(me, task) if me != "user" else None
     base = (parent["chain"] if parent else [me]) if me != "user" else []
     chain = list(base) + [to]
@@ -1593,6 +1598,8 @@ def do_send(to, body, task=None, kind="task", reply_to=None):
         for old in all_msgs():
             if old["from"] == me and old["to"] == to and old["task"] == task and old["kind"] == "task" and old["body"] == body:
                 audit_refused("duplicate", to, task)
+                if waking and old["state"] == "queued":  # still waiting for its target: start it; an answered one needs nothing
+                    wake_target(to, old, task)
                 return old, "duplicate"
     task = task or ("t-" + uuid.uuid4().hex[:8])
     if sum(1 for m in all_msgs() if m["task"] == task) >= c["task_msg_cap"]:
@@ -1602,7 +1609,70 @@ def do_send(to, body, task=None, kind="task", reply_to=None):
     if me == "user" and os.environ.get("CLAUDE_CODE_SESSION_ID"):
         m["origin_session"] = os.environ["CLAUDE_CODE_SESSION_ID"]
     audit_msg_created(m)
+    if waking:
+        return m, wake_target(to, m, task)
     return m, post(m)
+
+
+def summon_cap_reason(c, live, recent):
+    """The cap a new session would hit: (audit reason, message), or None.  One rule for spawn_session and the wake precheck."""
+    if len(live) >= c["max_live"]:
+        return "cap_live", "live cap reached (%d running, max_live=%d); stop one first: pros stop <name>" % (len(live), c["max_live"])
+    if recent >= c["summon_budget_per_hour"]:
+        return "cap_hourly", "summon budget used up (%d per hour)" % c["summon_budget_per_hour"]
+    return None
+
+
+def summons_last_hour() -> int:
+    log_path, recent = run_dir("summons.log"), 0
+    if log_path.exists():
+        for ln in log_path.read_text().splitlines():
+            with contextlib.suppress(ValueError, KeyError):
+                recent += 1 if json.loads(ln)["t"] > now() - 3600 else 0
+    return recent
+
+
+def wake_precheck(to, task):
+    """B3: refuse a wake before anything is stored when the target may not be summoned or a cap is reached (exit 4)."""
+    gate(to, "summoned")
+    check_may_summon()
+    c = cfg()
+    if is_pro():
+        parent = find_session(os.environ["PRO_SELF"])
+        if (parent or {}).get("depth", 1) + 1 > c["max_depth"]:
+            die("summon chain too deep (max_depth %d); %s is not running" % (c["max_depth"], to), 4, "cap")
+    live = [r for r in sessions() if r.get("name") != to and is_alive(r)]
+    why = summon_cap_reason(c, live, summons_last_hour())
+    if why:
+        audit_refused(why[0], to, task)
+        die("%s is not running and cannot be started: %s" % (to, why[1]), 4, "cap")
+
+
+def wake_target(to, m, task):
+    """B3: the message is stored and queued first, then the target is started as `ask` does; a failed start keeps it queued."""
+    if m["state"] == "queued" and not m.get("session"):
+        m["session"] = planned_session(to)
+        save_msg(m)
+        queue_add(m["session"], m)
+    print("%s is not running; starting it" % to, file=sys.stderr)
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            summon(to, None, None, None)
+    except Fail as e:
+        if e.err == "cap":
+            audit_refused("cap_live" if "live cap" in str(e) else "cap_hourly", to, task)
+        print("pros: %s did not start; message %s is kept queued and is delivered when %s starts" % (to, m["id"], to), file=sys.stderr)
+        raise
+    rec, cur = find_session(to), get_msg(m["id"]) or m
+    if rec and cur["state"] == "queued":
+        if cur.get("session") != rec["session"]:  # a project-scoped session has its own queue
+            cur["session"] = rec["session"]
+            save_msg(cur)
+            queue_add(rec["session"], cur)
+        with contextlib.suppress(Fail), lock(rec["session"], 5):
+            deliver_next(rec)
+        cur = get_msg(m["id"]) or cur
+    return "delivered" if cur["state"] in ("injected", "answered") else "queued"
 
 
 def read_text_arg(t):
@@ -1694,7 +1764,8 @@ def auto_pump():
 def stop_session(rec, why="stopped"):
     s = rec["session"]
     tmux("kill-session", "-t", "=" + s)
-    for m in all_msgs():
+    keep = why == "failed-to-start"  # store-first (B3): a failed start keeps its queue for the next start (or the deadline)
+    for m in [] if keep else all_msgs():
         if m["to"] == rec["name"] and m["state"] == "queued" and m.get("session") in (s, None):
             m["state"], m["fail_reason"] = "failed", "recipient stopped"
             save_msg(m)
@@ -1706,8 +1777,9 @@ def stop_session(rec, why="stopped"):
             save_msg(m)
             audit_msg_failed(m, "recipient_stopped")
             notify(m["from"], m["task"], "%s was %s while task %s was still unanswered; no answer will come" % (rec["name"], why, m["task"]))
-    with contextlib.suppress(OSError):
-        shutil.rmtree(queue_dir(s))
+    if not keep:
+        with contextlib.suppress(OSError):
+            shutil.rmtree(queue_dir(s))
     drop_session(rec, why)
 
 
@@ -2353,15 +2425,11 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
     live = [r for r in sessions() if r["session"] != s and is_alive(r)]
     if len(live) >= c["max_live"]:
         audit_rate(live, 0, False)
-        die("live cap reached (%d running, max_live=%d); stop one first: pros stop <name>" % (len(live), c["max_live"]), 4, "cap")
-    log_path, recent = run_dir("summons.log"), 0
-    if log_path.exists():
-        for ln in log_path.read_text().splitlines():
-            with contextlib.suppress(ValueError, KeyError):
-                recent += 1 if json.loads(ln)["t"] > now() - 3600 else 0
+        die(summon_cap_reason(c, live, 0)[1], 4, "cap")
+    recent = summons_last_hour()
     audit_rate(live, recent, recent < c["summon_budget_per_hour"])
     if recent >= c["summon_budget_per_hour"]:
-        die("summon budget used up (%d per hour)" % c["summon_budget_per_hour"], 4, "cap")
+        die(summon_cap_reason(c, [], recent)[1], 4, "cap")
     sandboxed = c["sandbox"] == "on" or (c["sandbox"] == "auto" and sandbox_available())
     info = {}
     if folder:
@@ -2429,7 +2497,7 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
         rec["persona_hash"] = sha(persona["skill"])
     write_json(run_dir("sessions", s + ".json"), rec)
     write_json(run_dir("state", s + ".json"), {"state": "starting", "last_activity": now(), "blocks": 0})
-    with open(log_path, "a") as f:
+    with open(run_dir("summons.log"), "a") as f:
         f.write(json.dumps({"t": now(), "name": name}) + "\n")
     row = {"ev": "start", "id": sid, "workdir": str(workdir), "entry": name, "run": rec["run_id"]}
     if plan[0] == "resume":
@@ -2442,6 +2510,32 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
                          "parent_session": audit_sid(plan[1]) if plan[0] in ("resume", "fork") else None, "live_count": len(live) + 1},
                actor="system", pro=audit_pro(name, e), pro_name=name, run=rec["run_id"], session=sid)
     return rec, owned, dropped
+
+
+def start_scope(scope, project):
+    scope = scope or "project"
+    if scope == "project" and (project / ".professionals").resolve() == pro_home().resolve():
+        scope = "global"
+    return scope
+
+
+def planned_session(name):
+    """The tmux session `summon <name>` (no options) would start here; wake queues into it before the start."""
+    e = gate(name, "summoned")
+    if e["kind"] == "folder":
+        return "pro-" + name
+    project = project_root()
+    return session_name(name, start_scope(None, project), project)
+
+
+def check_may_summon():
+    if is_pro():
+        try:
+            me = next((p for p in personas(marketplace_dir()) if p["name"] == os.environ["PRO_SELF"]), None)
+        except Fail:
+            me = None
+        if me is not None and me["may_summon"] is False:
+            die("%s is not allowed to summon others (may_summon: false)" % me["name"], 4)
 
 
 def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False, session=None):
@@ -2474,18 +2568,10 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
         if e.get("persona_hash") and e["persona_hash"] != sha(persona["skill"]):
             die("%s changed in the marketplace since you enabled it; the user runs: pros enable %s" % (name, name), 4, "changed")
         project = project_root()
-        scope = scope or "project"
-        if scope == "project" and (project / ".professionals").resolve() == pro_home().resolve():
-            scope = "global"
+        scope = start_scope(scope, project)
         s = session_name(name, scope, project)
         workdir = (project / ".professionals" / name) if scope == "project" else (pro_home() / "home" / name)
-    if is_pro():
-        try:
-            me = next((p for p in personas(marketplace_dir()) if p["name"] == os.environ["PRO_SELF"]), None)
-        except Fail:
-            me = None
-        if me is not None and me["may_summon"] is False:
-            die("%s is not allowed to summon others (may_summon: false)" % me["name"], 4)
+    check_may_summon()
     t0 = now()
     ensure(run_dir())
     explicit_mode = mode or e.get("mode") or None
@@ -2573,18 +2659,31 @@ def wait_ready(rec, owned, timeout, folder=False):
 
 
 def resend_unanswered(rec):
-    """After a (re)start: injected-but-unanswered tasks are resent once, marked possible duplicate; answered never."""
+    """After a (re)start: an injected-but-unanswered task is resent once per restart, marked possible duplicate.
+
+    `resends` on the message counts them; after max_resends (default 1), or once its deadline passed, the task fails
+    and the sender gets one note, so a crash loop can never redeliver it without end.  Answered tasks never."""
+    cap = int(cfg()["max_resends"])
     for m in all_msgs():
-        if m["to"] == rec["name"] and m["kind"] == "task" and m["state"] == "injected":
-            m["state"], m["dup"], m["session"] = "queued", True, rec["session"]
+        if m["to"] != rec["name"] or m["kind"] != "task" or m["state"] != "injected":
+            continue
+        n = int(m.get("resends", 0))
+        why = "its deadline passed" if now() > m["deadline"] else ("already resent %d of max_resends %d" % (n, cap) if n >= cap else "")
+        if why:
+            m["state"], m["fail_reason"] = "failed", "not resent: " + why
             save_msg(m)
-            queue_add(rec["session"], m)
+            audit_msg_failed(m, "other")
+            notify(m["from"], m["task"], "%s restarted; task %s was not resent again (%s). Ask again if you still need it." % (rec["name"], m["task"], why))
+            continue
+        m["state"], m["dup"], m["session"], m["resends"] = "queued", True, rec["session"], n + 1
+        save_msg(m)
+        queue_add(rec["session"], m)
 
 
 # --------------------------------------------------------------------------- send / read / reply / ask / wait
 
 def cmd_send(a):
-    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind)
+    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind, wake=not a.no_wake)
     print("sent %s task=%s to=%s status=%s chain=%s" % (m["id"], m["task"], m["to"], status, ">".join(m["chain"])))
     if m["kind"] == "task":
         print("the answer arrives as a message; or: pros wait %s" % m["task"])
@@ -2647,10 +2746,15 @@ def cmd_reply(a):
 
 
 def reply_for(me, task):
-    for m in all_msgs():
-        if m["to"] == me and m["task"] == task and m["kind"] in ("reply", "note"):
-            return m
-    return None
+    """The answer to my latest ask of `task`: the newest real reply since that ask, else the newest system note.
+
+    A late real reply wins over the deadline note (T-X1); a reused task id never returns an earlier ask's reply (B1-2)."""
+    ms = all_msgs()
+    asks = [m for m in ms if m["from"] == me and m["task"] == task and m["kind"] == "task"]
+    since = asks[-1]["created"] if asks else 0
+    got = [m for m in ms if m["to"] == me and m["task"] == task and m["kind"] in ("reply", "note") and m["created"] >= since]
+    real = [m for m in got if m["from"] != "pro"]
+    return (real or got or [None])[-1]
 
 
 def wait_for(task, timeout, me=None, register=True):
@@ -2665,9 +2769,13 @@ def wait_for(task, timeout, me=None, register=True):
         out = "failed"
         if r:
             out = "note_only" if r["kind"] == "note" else "reply"
-        elif code == 3:
+        elif code in (3, 5):
             tgt = find_session(asked[-1]["to"]) if asked else None
-            out = "pending_target_stuck" if tgt and live_state(tgt)[0] in ("stuck", "dialog", "limit") else "pending"
+            st = live_state(tgt)[0] if tgt else "gone"
+            if code == 3:
+                out = "pending_target_stuck" if st in ("stuck", "dialog", "limit") else "pending"
+            elif st == "stuck":
+                out = "pending_target_stuck"
         ret = ("note" if r["kind"] == "note" else "reply") if r else "none"
         audit_emit("wait_end", {"wait": wid, "outcome": out, "exit": code, "returned": ret, "returned_msg": r["id"] if r else None,
                                 "dur_ms": round((time.monotonic() - t0) * 1000, 1)}, actor=actor)
@@ -2702,7 +2810,7 @@ def wait_for_inner(task, timeout, me=None, register=True):
                     if not rec:
                         return 5, None
                     state, _ = live_state(rec)
-                    if state == "limit":
+                    if state in ("limit", "stuck"):  # a stuck target ends the wait (exit 5), never held to the timeout
                         return 5, None
                     dialog_since = (dialog_since or now()) if state == "dialog" else None
                     if dialog_since and now() - dialog_since > 20:
@@ -3302,6 +3410,7 @@ def build_parser():
     sp.add_argument("text")
     sp.add_argument("--task")
     sp.add_argument("--kind", default="task", choices=["task", "reply", "note"])
+    sp.add_argument("--no-wake", action="store_true", help="refuse (exit 5) instead of starting a professional that is not running")
     sp.add_argument("--json", action="store_true")
     sp = add("read", cmd_read)
     sp.add_argument("id")

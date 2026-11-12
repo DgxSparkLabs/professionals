@@ -34,8 +34,9 @@ There are two kinds of professional:
 
 - R1. `pros summon <name>` starts a professional in its own tmux session, or reuses the live one. One lock per session name covers decide, record and start.
 - R2. Caps: live professionals (`max_live`, default 6), chain depth (`max_depth`, 4), summons per hour (20), idle reap (30 minutes). Configurable in `~/.professionals/config.json`.
-- R3. Messages are files. Delivery to a busy professional is queued and delivered at the end of its turn (Stop hook) or pasted when it is idle. Bodies over 2 KB arrive as a pointer (`pros read <id>`). A message is acted on once; a restart resends unanswered tasks marked as possible duplicates.
-- R4. Every task has a deadline; an overdue task produces a timeout notice to its sender.
+- R3. Messages are files. Delivery to a busy professional is queued and delivered at the end of its turn (Stop hook) or pasted when it is idle. Bodies over 2 KB arrive as a pointer (`pros read <id>`). A message is acted on once; a restart resends each unanswered task once, marked as a possible duplicate, counted in `resends`; after `max_resends` (default 1) restarts, or once its deadline passed, the task fails and its sender gets one note, so a crash loop never redelivers it without end.
+- R4. Every task has a deadline; an overdue task produces a timeout notice to its sender. `pros wait` (and `ask`) returns the newest real reply to the latest ask of that task id, and the timeout notice only when no real reply exists, so a late reply is never hidden by the notice and a reused task id never returns an earlier ask's answer. A wait ends with exit 5 (`stuck: <reason>`) when its target is gone, stuck (busy with no activity for `stuck_min`), at a usage limit, or in a dialog for 20 s.
+- R4a. `pros send` to an allowlisted professional that is not running starts it, as `ask` does (wake on message). The caps are checked first and refuse with exit 4 before anything is stored; otherwise the message is stored and queued before the start, so a start that fails (exit 5) keeps it queued for the next start or until its deadline. `--no-wake` keeps the old refusal (exit 5, nothing stored).
 - R5. Delegation chains travel with the message; revisiting a name in the chain, a wait-for cycle, or a chain deeper than `max_depth` is refused.
 - R6. Permissions: sessions start in `dontAsk` mode with an allowlist from the persona's `tools:` line intersected with a fixed safe list; sensitive paths are denied for read and edit; the Claude Code sandbox is used when the machine allows it.
 - R7. `pros new`, `pros validate`, `pros publish` scaffold, check and publish a persona.
@@ -108,7 +109,7 @@ Live, reaped and lost describe the process and are independent of the state abov
 
 - The header is written by the CLI, never by the sender. A header marker inside a body is rewritten so it cannot pose as one.
 - Answer a task with `pros reply <task> - <<'EOF' ... EOF`. A reply is final.
-- Send with `pros send` (asynchronous) or `pros ask --wait N` (at most 100 seconds; continue with `pros wait`).
+- Send with `pros send` (asynchronous; starts an allowlisted target that is not running, unless `--no-wake`) or `pros ask --wait N` (at most 100 seconds; continue with `pros wait`).
 
 ## 7. Exit codes
 
@@ -129,6 +130,7 @@ All tests run with a stand-in `claude` program on a private tmux socket and a te
 |---|---|
 | Summon, reuse, lock race, trust dialog, startup failure | `tests/test_summon.py` |
 | Messaging, queueing, ack and retry, long bodies | `tests/test_messaging.py`, `tests/test_reliability1.py` |
+| Resend counter, latest reply on wait, stuck target ends a wait, audit status before import, wake on message | `tests/test_v040.py` |
 | Chains, loops, deadlock refusal | `tests/test_chain.py` |
 | Caps and budgets | `tests/test_caps.py` |
 | Pane classifier | `tests/test_classifier.py` |

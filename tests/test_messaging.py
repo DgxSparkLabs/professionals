@@ -152,7 +152,7 @@ class Messaging(ProTestCase):
         self.assertIn("stuck", r.stdout)
 
     def test_send_to_missing_session_refused(self):
-        r = self.pro("send", "beta", "hi")
+        r = self.pro("send", "beta", "hi", "--no-wake")  # 0.4.0: without --no-wake, send starts it (test_v040)
         self.assertEqual(r.returncode, 5)
         self.assertIn("summon", r.stderr)
 

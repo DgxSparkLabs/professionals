@@ -108,7 +108,8 @@ The full specification is in [docs/spec/](docs/spec/spec.md).
 ## Safety and limits
 
 - **Caps.** At most 6 live professionals, chain depth at most 4, a budget of summons per hour, and idle professionals stop after 30 minutes. All are configurable in `~/.professionals/config.json`.
-- **Deadlines.** Every request has one. A stuck or dead target is reported as `stuck: <reason>`, never waited on forever.
+- **Deadlines.** Every request has one. A stuck or dead target is reported as `stuck: <reason>`, never waited on forever. A late reply is still returned by `pros wait`.
+- **Wake on message.** `pros send` starts an allowlisted professional that is not running (the caps still apply); the message is stored first, so a failed start never loses it. `--no-wake` refuses instead.
 - **Permissions.** Professionals start in `dontAsk` mode with an allowlist taken from their `tools:` line, intersected with a fixed safe list. A missing permission is a clear denial, never a hidden dialog. Your own Claude Code permission settings always apply, and nothing here widens them.
 - **Sandbox.** Professionals run in the Claude Code sandbox when your machine supports it (it needs `bubblewrap` and `socat`, and some Linux setups such as stock Ubuntu 24.04+ block it; `pros doctor` tells you). Either way, read access is denied to sensitive paths you list in `deny_paths`, and the shell is limited to an allowlist.
 - **Trust.** Only professionals from marketplaces you have added can be summoned. A professional is text that instructs an agent, so read one before you add a marketplace you do not know.

@@ -102,7 +102,9 @@ class TestAuditFixtures(unittest.TestCase):
         ask = next(c for c in cmds if c["argv"][0] == "ask")
         self.assertEqual(ask["exit"], 3)
         self.assertIn("pending", ask["out"])
-        self.assertEqual([c["exit"] for c in cmds if c["argv"][0] == "wait"], [5, 5])  # see T-X1: the timeout note shadows the late reply
+        waits = [c for c in cmds if c["argv"][0] == "wait"]
+        self.assertEqual([c["exit"] for c in waits], [5, 0])  # T-X1 (0.4.0): the late real reply wins over the timeout note
+        self.assertIn("kind=reply", waits[1]["out"])
 
     def test_resume_fork_lineage(self):
         starts = [r for r in self.resume["records"]["history/alpha.jsonl"] if r["ev"] == "start"]
