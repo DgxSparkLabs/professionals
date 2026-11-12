@@ -4,10 +4,8 @@ Capture mode, retention, verdict entry, saved report definitions, export preview
 store as an event (audit_config, audit_evaluation, audit_purge) plus an audit_log row, with one generation bump per write
 transaction. The HTTP adapter calls these only when it was started with --manage and the request carries the owner token.
 Standard library only."""
-import hashlib
 import json
 import os
-import re
 import sqlite3
 import time
 
@@ -20,7 +18,6 @@ CAPTURE_MODES = ("off", "metadata")  # "content" is reserved, not in the first r
 RETENTION = {"operational": ("retention_metadata_days", 400), "content": ("retention_content_days", 7), "reports": ("retention_reports_days", 0)}
 PURGE_CLASSES = ("operational", "content", "reports")
 LOG_ACTIONS = ("audit_config", "audit_export", "audit_purge", "audit_correction", "audit_migrate")
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$")
 MAX_DAYS = 3650
 
 
@@ -186,61 +183,41 @@ def verdict(home, body, now):
 
 
 # ---------------------------------------------------------------------------- saved reports
-def _report_def(query, method, args):
-    if method not in Q.ARGS:
-        raise ManageError("unknown query method", field="method")
-    if not isinstance(args, dict) or not all(isinstance(v, (str, int)) for v in args.values()):
-        raise ManageError("args must be a flat object", field="args")
-    try:
-        query._validate(method, args)
-    except Q.AuditError as e:
-        raise ManageError(str(e), e.code, e.field)
-    return {"api_version": Q.API_VERSION, "method": method, "args": {k: args[k] for k in sorted(args)}}
-
-
-def save_report(home, query, name, method, args, now):
-    if not isinstance(name, str) or not NAME_RE.match(name):
-        raise ManageError("report name: letters, digits, . _ - (max 48)", field="name")
-    d = _report_def(query, method, args)
-    text = json.dumps(d, sort_keys=True)
-    rid = "rp-" + hashlib.sha1((name + "|" + text).encode("utf-8")).hexdigest()[:12]
+# One implementation: reports.py (F2) owns definitions, versions, snapshots and the audit_log rows; these wrappers only map errors
+# and open the store, so the dashboard and `pros audit report ...` read and write the same rows (test_audit_reports parity test).
+def _reports_call(home, fn):
+    from . import reports as R
     c = _open(home)
     try:
-        def go():
-            c.execute("DELETE FROM report_def WHERE name = ?", (name,))
-            c.execute("INSERT INTO report_def (id, name, definition, created) VALUES (?,?,?,?)", (rid, name, text, round(now, 3)))
-            c.execute("INSERT INTO audit_log (t, action, actor, target, outcome, detail) VALUES (?, 'report_save', 'operator', ?, 'ok', ?)", (round(now, 3), rid, name))
-        _tx(c, go)
+        return fn(R, c)
+    except R.ReportError as e:
+        raise ManageError(str(e), e.code, "name" if "name" in str(e) else "spec")
     finally:
         c.close()
-    return {"id": rid, "name": name, "definition": d}
+
+
+def save_report(home, query, name, spec, now):
+    if not isinstance(spec, dict) or not all(isinstance(v, (str, int, float, list)) for v in spec.values()):
+        raise ManageError("spec must be a flat object", field="spec")
+    return _reports_call(home, lambda R, c: R.save_definition(c, name, spec, now, query))
 
 
 def list_reports(home):
     if not os.path.exists(S.db_path(home)):
-        return {"reports": []}
-    c = _open(home)
-    try:
-        rows = c.execute("SELECT id, name, definition, created FROM report_def ORDER BY name, id").fetchall()
-    finally:
-        c.close()
-    return {"reports": [{"id": r[0], "name": r[1], "definition": json.loads(r[2]), "created": r[3]} for r in rows]}
+        return {"reports": [], "snapshots": []}
+    return _reports_call(home, lambda R, c: R.list_payload(c, home))
 
 
-def delete_report(home, rid, now):
-    if not isinstance(rid, str) or not re.match(r"^rp-[0-9a-f]{12}$", rid):
-        raise ManageError("report id rp-<12 hex>", field="id")
-    c = _open(home)
-    try:
-        def go():
-            n = c.execute("DELETE FROM report_def WHERE id = ?", (rid,)).rowcount
-            if not n:
-                raise ManageError("no such report", "not_found", "id")
-            c.execute("INSERT INTO audit_log (t, action, actor, target, outcome, detail) VALUES (?, 'report_delete', 'operator', ?, 'ok', NULL)", (round(now, 3), rid))
-        _tx(c, go)
-    finally:
-        c.close()
-    return {"deleted": rid}
+def delete_report(home, name, now):
+    return _reports_call(home, lambda R, c: R.delete_definition(c, name, now))
+
+
+def run_report(home, query, name, now):
+    """Render a snapshot of a saved definition (a local file under audit/reports/snapshots, 0600)."""
+    def go(R, c):
+        snap, _ = R.render_snapshot(query, c, home, R.load_definition(c, name), now)
+        return {"snapshot": snap["id"], "cutoff": snap["cutoff"], "rows": R.snapshot_rows(snap)}
+    return _reports_call(home, go)
 
 
 # ---------------------------------------------------------------------------- export preview
@@ -289,7 +266,9 @@ def purge(home, cls, before, now, dry_run=False, reason="operator"):
         elif cls == "content":
             counts = {"content": c.execute("SELECT COUNT(*) FROM content WHERE expires < ?", (before,)).fetchone()[0]}
         else:
-            counts = {"reports": c.execute("SELECT COUNT(*) FROM report_def WHERE created < ?", (before,)).fetchone()[0]}
+            from . import reports as R
+            old_snaps = [x["id"] for x in R.list_snapshots(home) if x["created_at"] < before]
+            counts = {"reports": c.execute("SELECT COUNT(*) FROM report_def WHERE created < ?", (before,)).fetchone()[0], "snapshots": len(old_snaps)}
         total = sum(counts.values())
         if dry_run:
             return {"class": cls, "before": before, "counts": counts, "dry_run": True}
@@ -321,6 +300,12 @@ def purge(home, cls, before, now, dry_run=False, reason="operator"):
         if cls == "operational":
             from . import derive
             derive.rebuild(c)
+        elif cls == "reports":
+            for sid in old_snaps:  # rendered snapshot files are the same retention class as their definitions
+                try:
+                    os.remove(os.path.join(R.reports_dir(home), "snapshots", sid + ".json"))
+                except FileNotFoundError:
+                    pass
     finally:
         c.close()
     return {"class": cls, "before": before, "counts": counts, "dry_run": False}

@@ -22,7 +22,7 @@ STATIC = {"/": ("dashboard.html", "text/html; charset=utf-8"), "/dashboard.js": 
           "/dashboard.css": ("dashboard.css", "text/css; charset=utf-8")}
 CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 MAX_BODY = 64 * 1024
-MANAGE_ACTIONS = ("capture", "retention", "verdict", "report_save", "report_delete", "export_preview", "purge")
+MANAGE_ACTIONS = ("capture", "retention", "verdict", "report_save", "report_delete", "report_run", "export_preview", "purge")
 
 
 def token_path(home):
@@ -97,9 +97,11 @@ class Manager:
         if action == "verdict":
             return M.verdict(self.home, b, now)
         if action == "report_save":
-            return M.save_report(self.home, self.query, b.get("name"), b.get("method"), b.get("args") or {}, now)
+            return M.save_report(self.home, self.query, b.get("name"), b.get("spec") or {}, now)
         if action == "report_delete":
-            return M.delete_report(self.home, b.get("id"), now)
+            return M.delete_report(self.home, b.get("name"), now)
+        if action == "report_run":
+            return M.run_report(self.home, self.query, b.get("name"), now)
         if action == "export_preview":
             return M.export_preview(self.home, b.get("since"), b.get("until"), b.get("format") or "jsonl", bool(b.get("raw")), now)
         before = b.get("before")
