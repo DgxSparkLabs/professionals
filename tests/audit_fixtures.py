@@ -80,7 +80,7 @@ def collect(r):
         for f in sorted(files):
             p = os.path.join(base, f)
             rel = os.path.relpath(p, r.home)
-            if rel.startswith(("home", "run/locks", "run/prompts", "run/settings")) or f.endswith((".lock", ".stamp")):
+            if rel.startswith(("home", "audit", "run/locks", "run/prompts", "run/settings")) or f.endswith((".lock", ".stamp")):
                 continue
             with open(p, encoding="utf-8", errors="replace") as fh:
                 text = fh.read()

@@ -14,6 +14,7 @@
   "id",
   "reason",
   "resumed_from",
+  "run",
   "t",
   "timeout",
   "workdir"
@@ -32,6 +33,7 @@
   "deadline",
   "from",
   "id",
+  "inj_n",
   "injected_at",
   "kind",
   "overdue",
