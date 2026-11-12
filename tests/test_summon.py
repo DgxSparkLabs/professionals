@@ -52,7 +52,8 @@ class Summon(ProTestCase):
         self.config({"trusted_marketplaces": []})
         r = self.pro("summon", "alpha")
         self.assertEqual(r.returncode, 4, r.stderr)
-        self.assertIn("not one you added", r.stderr)
+        self.assertIn("not in your professionals list", r.stderr)  # an untrusted marketplace is never seeded
+        self.assertIn("not one you added", self.pro("enable", "alpha").stderr)
         self.assertEqual(self.sessions_alive(), [])
 
     def test_bad_names(self):

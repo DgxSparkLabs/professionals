@@ -34,10 +34,21 @@ def main():
         print("2.1.322 (Claude Code)")
         return 0
     if ARGV[:2] == ["agents", "--json"]:
+        if os.environ.get("FAKE_AGENTS_FAIL"):
+            return 1
         out = []
         for f in os.listdir(FAKE_DIR) if os.path.isdir(FAKE_DIR) else []:
             if f.endswith(".status"):
-                out.append({"name": f[:-7], "status": open(os.path.join(FAKE_DIR, f)).read().strip()})
+                n, row = f[:-7], {}
+                row = {"name": n, "status": open(os.path.join(FAKE_DIR, f)).read().strip()}
+                try:
+                    pid = int(open(os.path.join(FAKE_DIR, n + ".pid")).read())
+                    os.kill(pid, 0)
+                    row["sessionId"] = open(os.path.join(FAKE_DIR, n + ".sid")).read().strip()
+                except (OSError, ValueError):
+                    if os.path.exists(os.path.join(FAKE_DIR, n + ".pid")):
+                        continue  # the process is gone: not listed
+                out.append(row)
         print(json.dumps(out))
         return 0
     if ARGV[:2] == ["plugin", "validate"]:
@@ -60,6 +71,21 @@ class Session:
         ie = os.environ.get("FAKE_IGNORE_ENTER", "0")
         self.ignore_enter = -1 if ie == "all" else int(ie)
         self.sid = "fake-" + self.name
+        if "--resume" in a:
+            self.sid = a[a.index("--resume") + 1]
+            if "--fork-session" in a:
+                self.sid = a[a.index("--session-id") + 1] if "--session-id" in a else "fork-" + self.name
+        elif "--session-id" in a:
+            self.sid = a[a.index("--session-id") + 1]
+        self.resuming = "--resume" in a
+        slug = "-fake-" + self.name
+        self.transcript = os.path.join(os.path.expanduser("~"), ".claude", "projects", slug, self.sid + ".jsonl")
+        os.makedirs(os.path.dirname(self.transcript), exist_ok=True)
+        with open(self.transcript, "a") as f:
+            f.write(json.dumps({"start": time.time(), "resumed": self.resuming}) + "\n")
+        for ext, val in ((".pid", str(os.getpid())), (".sid", self.sid)):
+            with open(os.path.join(FAKE_DIR, self.name + ext), "w") as f:
+                f.write(val)
         info = {"argv": a, "env": {k: v for k, v in os.environ.items() if k.startswith("PRO_")}, "cwd": os.getcwd()}
         for flag in ("--settings", "--append-system-prompt-file"):
             if flag in a:
@@ -69,6 +95,8 @@ class Session:
                     pass
         with open(os.path.join(FAKE_DIR, self.name + ".argv.json"), "w") as f:
             json.dump(info, f)
+        with open(os.path.join(FAKE_DIR, self.name + ".argvs.jsonl"), "a") as f:
+            f.write(json.dumps(info) + "\n")
         self.log("START")
 
     def log(self, line):
@@ -82,7 +110,7 @@ class Session:
     def hook(self, event, payload):
         if os.environ.get("FAKE_NOHOOKS"):
             return ""
-        payload = dict(payload, session_id=self.sid, transcript_path=os.path.join(FAKE_DIR, self.name + ".jsonl"))
+        payload = dict(payload, session_id=self.sid, transcript_path=self.transcript)
         r = subprocess.run([sys.executable, PRO, "hook", event], input=json.dumps(payload), capture_output=True, text=True)
         return r.stdout
 
@@ -145,7 +173,7 @@ class Session:
                 return subs
 
     def run(self):
-        if os.environ.get("FAKE_FAIL"):
+        if os.environ.get("FAKE_FAIL") or (os.environ.get("FAKE_FAIL_RESUME") and self.resuming):
             print("fatal: fake startup failure")
             return 3
         fd = sys.stdin.fileno()

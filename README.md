@@ -79,7 +79,26 @@ Each one is also a plain skill, so you can install a single persona on its own: 
 3. **Delegate.** Every professional checks the task against its scope. Outside it, the professional hands that part to someone better, or declines with a reason. The delegation chain travels with the message, so loops are refused.
 4. **Grow.** No fit? `professional-smith` writes a new definition from the template, practices it on sample tasks, validates it and publishes it.
 
-Useful commands: `pros list`, `pros search <words>`, `pros team`, `pros attach <name>`, `pros stop <name>`, `pros doctor`. The full list is in the skill: `plugins/professionals/skills/professionals/SKILL.md`.
+Useful commands: `pros list`, `pros add <dir>`, `pros sessions <name>`, `pros search <words>`, `pros team`, `pros attach <name>`, `pros stop <name>`, `pros doctor`. The full list is in the skill: `plugins/professionals/skills/professionals/SKILL.md`.
+
+## Your own folders as professionals
+
+Any folder with its own `CLAUDE.md`, `AGENTS.md` or `.claude/` can be a professional: the instructions already there are its definition.
+
+```
+pros add ~/code/my-repo            # once; yours alone to run, a professional cannot do it
+pros summon my-repo                # starts (or resumes) a session inside that folder
+pros ask my-repo "Where is the retry logic? Cite path:line."
+```
+
+It was tried on a real WhatsApp-helper repo: added, summoned, asked where messages are stored, stopped, summoned again (`resumed=<id>`), and the follow-up was answered from the earlier context.
+
+- **Resume.** Every session has an id kept in a history. The next `pros summon` resumes the last good session; `--fresh` starts clean, `--fork` copies the context into a new session, `pros rate <name> bad` makes it start fresh next time.
+- **Allowlist.** Only professionals on your list can be summoned or messaged. `add`, `remove`, `enable`, `disable`, `keep` and `rate` refuse inside a professional session, and professionals cannot read or edit the registry. A session that you give generic shell access can still act as you: grant that sparingly.
+- **Folder code.** `pros add` prints any hooks or MCP servers the folder would run and remembers a hash of its instructions and settings. If they change, summon is refused until you run `pros add <dir> --refresh`. Folders with hooks or MCP need `--trust-code` before the trust dialog is answered for you.
+- **Manage.** `pros list` shows everyone with state and last session; `pros keep <name>` stops the idle reaper from ending one; `pros sessions <name>` shows the history; `pros remove <name>` never touches the folder.
+
+The full specification is in [docs/spec/](docs/spec/spec.md).
 
 ## Safety and limits
 

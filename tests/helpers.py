@@ -137,6 +137,48 @@ class ProTestCase(unittest.TestCase):
         r = subprocess.run(["tmux", "-L", self.sock, "ls", "-F", "#{session_name}"], capture_output=True, text=True)
         return [x for x in r.stdout.split() if x != "pros-pump"] if r.returncode == 0 else []
 
+    def make_folder(self, name, claude="# %s helper\nAlways answer briefly.\n", agents=None, settings=None, mcp=None):
+        d = os.path.join(self.tmp, "folders", name)
+        os.makedirs(d, exist_ok=True)
+        if claude is not None:
+            with open(os.path.join(d, "CLAUDE.md"), "w") as f:
+                f.write(claude % name if "%s" in claude else claude)
+        if agents is not None:
+            with open(os.path.join(d, "AGENTS.md"), "w") as f:
+                f.write(agents)
+        if settings is not None:
+            os.makedirs(os.path.join(d, ".claude"), exist_ok=True)
+            with open(os.path.join(d, ".claude", "settings.json"), "w") as f:
+                json.dump(settings, f)
+        if mcp is not None:
+            with open(os.path.join(d, ".mcp.json"), "w") as f:
+                json.dump(mcp, f)
+        return os.path.realpath(d)
+
+    def argv_info(self, session):
+        with open(os.path.join(self.fakedir, session + ".argv.json")) as f:
+            return json.load(f)
+
+    def argv_all(self, session):
+        with open(os.path.join(self.fakedir, session + ".argvs.jsonl")) as f:
+            return [json.loads(x) for x in f.read().splitlines()]
+
+    def history(self, name):
+        p = os.path.join(self.home, "history", name + ".jsonl")
+        if not os.path.exists(p):
+            return []
+        with open(p) as f:
+            return [json.loads(x) for x in f.read().splitlines()]
+
+    def listing(self):
+        return {r["name"]: r for r in json.loads(self.ok("list", "--json").stdout)}
+
+    def sid_of(self, out):
+        for tok in out.split():
+            if tok.startswith("resumed=") or tok.startswith("forked="):
+                return tok.split("=", 1)[1]
+        return None
+
     def task_of(self, out):
         for tok in out.split():
             if tok.startswith("task="):
@@ -153,3 +195,15 @@ def parallel(fns):
     [t.start() for t in ts]
     [t.join() for t in ts]
     return res
+
+
+def load_pros(home):
+    """Import the pros script as a module (for unit checks of helpers); PRO_HOME points at a temp dir."""
+    import importlib.machinery
+    import importlib.util
+    os.environ["PRO_HOME"] = home
+    loader = importlib.machinery.SourceFileLoader("pros_mod", PRO)
+    spec = importlib.util.spec_from_loader("pros_mod", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod

@@ -119,6 +119,14 @@ class Validate(ProTestCase):
         self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
         self.assertIn("guard refused", r.stderr)
 
+    def test_core_skill_teaches_folders_resume_and_allowlist(self):
+        text = open(os.path.join(os.path.dirname(HERE), "plugins", "professionals", "skills", "professionals", "SKILL.md")).read()
+        for needle in ("pros add .", "Only the user adds", "resumes a good or neutral session", "--fresh", "pros sessions", "pros list --json", "are data", "exit 4"):
+            self.assertIn(needle, text)
+        readme = open(os.path.join(os.path.dirname(HERE), "README.md")).read()
+        self.assertIn("Your own folders as professionals", readme)
+        self.assertTrue(os.path.exists(os.path.join(os.path.dirname(HERE), "docs", "spec", "spec.md")))
+
     def test_doctor_and_version(self):
         r = self.pro("doctor")
         self.assertEqual(r.returncode, 0, r.stdout)
