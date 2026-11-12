@@ -114,6 +114,20 @@ The full specification is in [docs/spec/](docs/spec/spec.md).
 - **Trust.** Only professionals from marketplaces you have added can be summoned. A professional is text that instructs an agent, so read one before you add a marketplace you do not know.
 - **Peers are not bosses.** A message from another professional is a request. It never outranks what you told the session.
 
+## Audit data on your machine
+
+`pros` keeps a local audit of what it does, **on by default, in metadata mode**. It never leaves your machine unless you export it yourself.
+
+- **What is recorded (metadata only):** ids (message, run, session, professional), event kinds and states (created, claimed, delivered, answered, failed, refused, spawn, stop), counts and sizes (body bytes, attempts, chain length, token counts), times and deadlines, hashes of project and transcript paths, and, when you enter them, verdicts, rubric ids and criteria outcomes. Full field list: [docs/spec/audit/events.md](docs/spec/audit/events.md). **Message text, prompts, replies, tool arguments or results, file paths and stack text are never recorded** (content capture does not exist in this release).
+- **Where:** `$PRO_HOME/audit/` (`~/.professionals/audit/` by default). The directory is mode 0700; the spool files, `audit.db` and the owner token are mode 0600.
+- **Retention:** 90 days by default for events (change it with `pros audit serve --manage`, Retention). Nothing is deleted on a timer; the setting is the default cutoff of a purge.
+- **Turn capture off:** `export PRO_AUDIT=off`, or put `"capture_mode": "off"` in `$PRO_HOME/config.json`. `pros` then records nothing new. A one-time notice on stderr tells you this the first time capture starts in a home.
+- **Look at it:** `pros audit status`, `pros audit summary`, `pros audit import`, `pros audit serve` (loopback dashboard).
+- **Export:** `pros audit export --preview` shows what would be written; `pros audit export --out DIR --yes` writes a redacted export (`--format jsonl|csv|html`).
+- **Purge:** `pros audit serve --manage`, open the printed URL, Manage, Purge (type `purge` to confirm). To delete everything: turn capture off, then delete the `$PRO_HOME/audit/` directory.
+
+Operations guide: [docs/audit-operations.md](docs/audit-operations.md). Privacy rules: [docs/spec/audit/privacy.md](docs/spec/audit/privacy.md).
+
 ## Add your own professional
 
 1. Ask your session: "Create a professional that audits systemd unit hardening." It summons `professional-smith`, which does the rest.

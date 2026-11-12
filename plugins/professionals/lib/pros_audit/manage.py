@@ -15,7 +15,7 @@ from . import query as Q
 from . import store as S
 
 CAPTURE_MODES = ("off", "metadata")  # "content" is reserved, not in the first release (privacy.md section 2)
-RETENTION = {"operational": ("retention_metadata_days", 400), "content": ("retention_content_days", 7), "reports": ("retention_reports_days", 0)}
+RETENTION = {"operational": ("retention_metadata_days", 90), "content": ("retention_content_days", 7), "reports": ("retention_reports_days", 0)}
 PURGE_CLASSES = ("operational", "content", "reports")
 LOG_ACTIONS = ("audit_config", "audit_export", "audit_purge", "audit_correction", "audit_migrate")
 MAX_DAYS = 3650

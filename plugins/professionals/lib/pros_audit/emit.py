@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 
 SPOOL_CAP = 64 * 1024 * 1024
@@ -72,6 +73,29 @@ def _flag(home, why):
         pass
 
 
+NOTICE = ("pros: audit capture is on (metadata only, stored locally in %s). Turn it off with PRO_AUDIT=off or "
+          "\"capture_mode\": \"off\" in %s. Details: docs/audit-operations.md. This notice is shown once.")
+
+
+def _notice(home, actor):
+    """One-time stderr notice, only for the operator's own terminal calls (never a professional session or a hook, whose
+    stderr may be read by a model or a parser). The marker is created first, so it is printed at most once per home."""
+    if actor not in ("user", "operator") or os.environ.get("PRO_SELF") or os.environ.get("PRO_SESSION"):
+        return
+    try:
+        fd = os.open(os.path.join(str(home), "audit", "notice-shown"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError:
+        return
+    try:
+        os.write(fd, b"1\n")
+    finally:
+        os.close(fd)
+    try:
+        sys.stderr.write(NOTICE % (os.path.join(str(home), "audit"), os.path.join(str(home), "config.json")) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def degraded():
     return bool(_ST["degraded"])
 
@@ -123,6 +147,7 @@ def emit(home, action, data, actor, env=None, origin="live", provenance=None):
             _append(home, gev)
             _ST["gap"] = None
         _append(home, ev)
+        _notice(home, actor)
         return ev["id"]
     except OverflowError:
         _ST["dropped"] = 1
