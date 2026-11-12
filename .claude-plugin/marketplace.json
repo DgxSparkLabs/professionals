@@ -127,6 +127,22 @@
     "linux"
    ],
    "version": "0.1.0"
+  },
+  {
+   "author": {
+    "name": "DgxSparkLabs"
+   },
+   "category": "builder",
+   "description": "Ship gatekeeper: checks a change against the repo's own rules (tests, records, docs, secrets, version) and returns SHIP or DON'T SHIP with the exact missing items.",
+   "name": "pro-ship-gatekeeper",
+   "source": "./plugins/pro-ship-gatekeeper",
+   "tags": [
+    "review",
+    "release",
+    "quality",
+    "ci"
+   ],
+   "version": "0.1.0"
   }
  ]
 }

@@ -1,0 +1,10 @@
+{
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "description": "Gate a change before merge or deploy: read the repo's own rules and check the change against them, output SHIP / DON'T SHIP with exact missing items",
+  "license": "MIT",
+  "name": "pro-ship-gatekeeper",
+  "repository": "https://github.com/DgxSparkLabs/professionals",
+  "version": "0.1.0"
+}
