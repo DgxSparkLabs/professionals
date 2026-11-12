@@ -200,9 +200,9 @@ class Session:
 
     def imports(self):
         pointer = 1  # starts on "No", like the real dialog
-        opts = ["Yes, allow external imports", "No, disable external imports"]
+        opts = ["No, disable external imports", "Yes, allow external imports"]  # real Claude Code 2.1.322 order (captured 11-12)
         while True:
-            sys.stdout.write("\x1b[2J\x1b[H Allow external imports?\r\n This project's CLAUDE.md imports files outside the working directory.\r\n\r\n")
+            sys.stdout.write("\x1b[2J\x1b[H Allow external CLAUDE.md file imports?\r\n This project's CLAUDE.md imports files outside the working directory.\r\n\r\n")
             for i, o in enumerate(opts):
                 sys.stdout.write(" %s%d. %s\r\n" % ("\u276f " if i == pointer else "  ", i + 1, o))
             sys.stdout.flush()
