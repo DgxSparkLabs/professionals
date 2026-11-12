@@ -73,19 +73,60 @@ def clean_spec(spec):
     return out
 
 
-def save_definition(conn, name, spec, now=None):
-    """Store a definition; the same content under the same name is a no-op. Returns the definition dict."""
-    if not NAME_RE.match(name or ""):
+def _write_tx(conn, fn):
+    """One write transaction: fn() then one generation bump (query.md section 2), so open snapshots see the change."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        g0 = conn.execute("SELECT generation FROM store_state").fetchone()[0]
+        out = fn()
+        conn.execute("UPDATE store_state SET generation = ?", (g0 + 1,))
+        conn.execute("COMMIT")
+        return out
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def save_definition(conn, name, spec, now=None, q=None):
+    """Store a definition; the same content under the same name is a no-op. Returns the definition dict.
+
+    The one save path for the CLI (`pros audit report save`) and the dashboard (manage report_save). With `q`, the filters are also
+    validated by the query layer, so a definition that cannot run is refused when it is saved. Each new version is an audit_log row."""
+    if not isinstance(name, str) or not NAME_RE.match(name):
         raise ReportError("report name: 1 to 48 letters, digits, dot, dash or underscore")
     now = time.time() if now is None else now
     spec = clean_spec(spec)
+    if q is not None:
+        try:
+            q._validate("query_metrics", _args(spec, now))
+        except Q.AuditError as e:
+            raise ReportError("%s: %s" % (e.field or "spec", e))
+        except ex.ExportError as e:
+            raise ReportError(str(e))
     did = "rd-" + _h(name, _canon(spec))
-    row = conn.execute("SELECT id FROM report_def WHERE id = ?", (did,)).fetchone()
+    row = conn.execute("SELECT created FROM report_def WHERE id = ?", (did,)).fetchone()
     if row is None:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute("INSERT INTO report_def (id, name, definition, created) VALUES (?,?,?,?)", (did, name, _canon(spec), now))
-        conn.execute("COMMIT")
-    return {"id": did, "name": name, "spec": spec, "created": now if row is None else conn.execute("SELECT created FROM report_def WHERE id=?", (did,)).fetchone()[0]}
+        def go():
+            conn.execute("INSERT INTO report_def (id, name, definition, created) VALUES (?,?,?,?)", (did, name, _canon(spec), now))
+            conn.execute("INSERT INTO audit_log (t, action, actor, target, outcome, detail) VALUES (?, 'report_save', 'operator', ?, 'ok', ?)", (round(now, 3), did, name))
+        _write_tx(conn, go)
+    return {"id": did, "name": name, "spec": spec, "created": now if row is None else row[0]}
+
+
+def delete_definition(conn, name, now=None):
+    """Delete every version of a named definition (snapshots already rendered stay until purged). Recorded in audit_log."""
+    now = time.time() if now is None else now
+    if not isinstance(name, str) or not NAME_RE.match(name):
+        raise ReportError("report name: 1 to 48 letters, digits, dot, dash or underscore")
+
+    def go():
+        n = conn.execute("DELETE FROM report_def WHERE name = ?", (name,)).rowcount
+        if not n:
+            raise ReportError("no saved report named %s" % name, "not_found")
+        conn.execute("INSERT INTO audit_log (t, action, actor, target, outcome, detail) VALUES (?, 'report_delete', 'operator', ?, 'ok', ?)", (round(now, 3), name, str(n)))
+        return n
+    return {"deleted": name, "versions": _write_tx(conn, go)}
 
 
 def load_definition(conn, name):
@@ -102,6 +143,12 @@ def list_definitions(conn):
         d["versions"] = conn.execute("SELECT COUNT(*) FROM report_def WHERE name = ?", (name,)).fetchone()[0]
         out.append(d)
     return out
+
+
+def list_payload(conn, home):
+    """What `pros audit report list --json` prints and GET /manage/v1/reports returns (one shape, parity-tested)."""
+    ss = list_snapshots(home)
+    return {"reports": list_definitions(conn), "snapshots": [{"id": x["id"], "name": x["report"]["name"], "cutoff": x["cutoff"], "created_at": x["created_at"]} for x in ss]}
 
 
 # --------------------------------------------------------------------------- snapshots
@@ -353,7 +400,7 @@ def export_snapshot(conn, snap, fmt, out_path, key=None):
 def add_parsers(sub):
     r = sub.add_parser("report", help="saved report definitions and local snapshots (owner only)")
     rs = r.add_subparsers(dest="rpsub", required=True)
-    for n in ("save", "run"):
+    for n in ("save", "run", "delete"):
         sp = rs.add_parser(n)
         sp.add_argument("name")
         sp.add_argument("--json", action="store_true")
@@ -403,18 +450,21 @@ def run_cli(a, home, out, err, now=None):
             return 0
         s = a.rpsub
         if s == "save":
-            d = save_definition(conn, a.name, _spec(a), now)
+            d = save_definition(conn, a.name, _spec(a), now, q)
             print(json.dumps(d, sort_keys=True) if a.json else "saved report %s (%s)" % (d["name"], d["id"]), file=out)
         elif s == "run":
             snap, path = render_snapshot(q, conn, home, load_definition(conn, a.name), now)
             print(json.dumps({"snapshot": snap["id"], "path": path}) if a.json else "snapshot %s at %s (cutoff %s, %d row(s))" % (snap["id"], path, snap["cutoff"], len(snapshot_rows(snap))), file=out)
+        elif s == "delete":
+            d = delete_definition(conn, a.name, now)
+            print(json.dumps(d, sort_keys=True) if a.json else "deleted report %s (%d version(s))" % (d["deleted"], d["versions"]), file=out)
         elif s == "list":
-            ds, ss = list_definitions(conn), list_snapshots(home)
+            p = list_payload(conn, home)
             if a.json:
-                print(json.dumps({"reports": ds, "snapshots": [{"id": x["id"], "name": x["report"]["name"], "cutoff": x["cutoff"]} for x in ss]}, sort_keys=True), file=out)
+                print(json.dumps(p, sort_keys=True), file=out)
             else:
-                for d in ds:
-                    print("%s  %s  %s  %s" % (d["name"], d["id"], _canon(d["spec"]), "%d snapshot(s)" % sum(1 for x in ss if x["report"]["name"] == d["name"])), file=out)
+                for d in p["reports"]:
+                    print("%s  %s  %s  %s" % (d["name"], d["id"], _canon(d["spec"]), "%d snapshot(s)" % sum(1 for x in p["snapshots"] if x["name"] == d["name"])), file=out)
         elif s == "show":
             snap = load_snapshot(home, a.snapshot)
             for r in snapshot_rows(snap):

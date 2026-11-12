@@ -357,15 +357,46 @@ class TestManagement(unittest.TestCase):
         self.assertEqual(self.post("verdict", {"target": CHILD, "status": "passed", "criteria": {"C1": "passed"}, "sql": "x"})[0], 400)
 
     def test_saved_reports_and_export_preview(self):
-        st, j = self.post("report_save", {"name": "weekly", "method": "query_metrics", "args": {"since": "7d", "professional": "system-designer"}})
+        st, j = self.post("report_save", {"name": "weekly", "spec": {"since": "7d", "professional": "system-designer"}})
         self.assertEqual(st, 200, j)
         rid = j["result"]["id"]
-        self.assertEqual(self.post("report_save", {"name": "bad", "method": "query_metrics", "args": {"nope": "1"}})[0], 400, "args validated by the query layer")
-        self.assertEqual(self.post("report_save", {"name": "../x", "method": "query_metrics", "args": {"since": "7d"}})[0], 400)
+        self.assertEqual(self.post("report_save", {"name": "bad", "spec": {"nope": "1"}})[0], 400, "spec validated")
+        self.assertEqual(self.post("report_save", {"name": "bad", "spec": {"since": "7d", "direct": "maybe-not-a-bool" * 20}})[0], 400, "values validated by the query layer")
+        self.assertEqual(self.post("report_save", {"name": "../x", "spec": {"since": "7d"}})[0], 400)
         reps = json.loads(req(self.port, "/manage/v1/reports", self.token)[2])["result"]["reports"]
-        self.assertEqual([(r["id"], r["name"], r["definition"]["method"]) for r in reps], [(rid, "weekly", "query_metrics")])
-        self.assertEqual(self.post("report_delete", {"id": rid})[0], 200)
-        self.assertEqual(self.post("report_delete", {"id": rid})[0], 404)
+        self.assertEqual([(r["id"], r["name"], r["spec"]["professional"]) for r in reps], [(rid, "weekly", "system-designer")])
+        st, j = self.post("report_run", {"name": "weekly"})
+        self.assertEqual(st, 200, j)
+        self.assertTrue(j["result"]["snapshot"].startswith("rs-"))
+        self.assertEqual(self.post("report_delete", {"name": "weekly"})[0], 200)
+        self.assertEqual(self.post("report_delete", {"name": "weekly"})[0], 404)
+        self.assertEqual(self.post("report_run", {"name": "weekly"})[0], 404)
+
+    def test_saved_reports_parity_with_cli(self):
+        """One implementation (reports.py): what the dashboard saves the CLI lists, and the reverse, byte-equal JSON."""
+        st, j = self.post("report_save", {"name": "par-dash", "spec": {"since": "30d", "group_by": "revision"}})
+        self.assertEqual(st, 200, j)
+        r = e_pros(self.tmp, self.home, "report", "save", "par-cli", "--since", "7d", "--by", "professional", "--json")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        cli_id = json.loads(r.stdout)["id"]
+        r = e_pros(self.tmp, self.home, "report", "save", "par-dash", "--since", "30d", "--by", "revision", "--json")
+        self.assertEqual(json.loads(r.stdout)["id"], j["result"]["id"], "same name + spec = same definition id on both surfaces")
+        cli = json.loads(e_pros(self.tmp, self.home, "report", "list", "--json").stdout)
+        api = json.loads(req(self.port, "/manage/v1/reports", self.token)[2])["result"]
+        self.assertEqual(api, cli)
+        self.assertIn(cli_id, [x["id"] for x in api["reports"]])
+        self.assertEqual([x["versions"] for x in api["reports"] if x["name"] == "par-dash"], [1], "no duplicate version")
+        c = sqlite3.connect(os.path.join(self.home, "audit", "audit.db"))
+        try:
+            logs = c.execute("SELECT COUNT(*) FROM audit_log WHERE action='report_save' AND detail IN ('par-dash','par-cli')").fetchone()[0]
+        finally:
+            c.close()
+        self.assertEqual(logs, 2, "each new definition is one audit_log row, whichever surface saved it")
+        self.assertEqual(self.post("report_delete", {"name": "par-cli"})[0], 200)
+        r = e_pros(self.tmp, self.home, "report", "delete", "par-dash")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(req(self.port, "/manage/v1/reports", self.token)[2])["result"]["reports"], [])
+
         st, j = self.post("export_preview", {"since": "1800000000", "until": ENOW, "format": "csv"})
         self.assertEqual(st, 200, j)
         r = e_pros(self.tmp, self.home, "export", "--preview", "--since", "1800000000", "--until", ENOW, "--format", "csv")

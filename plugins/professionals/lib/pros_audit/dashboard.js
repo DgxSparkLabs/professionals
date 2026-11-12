@@ -298,13 +298,18 @@
           return b;
         }));
       out.push(form("Save current overview as a report", [el("label", {}, ["name ", el("input", { name: "name", size: 20 })]), " "], "report_save",
-        function (e) { var a = filterArgs(true), gb = $("filters").group_by.value.trim(); if (gb) a.group_by = gb; return { name: e.name.value.trim(), method: "query_metrics", args: a }; },
+        function (e) { var a = filterArgs(true), gb = $("filters").group_by.value.trim(); if (gb) a.group_by = gb; return { name: e.name.value.trim(), spec: a }; },
         function () { go("manage"); }));
       out.push(el("h3", { text: "Saved reports" }));
-      out.push(table(["name", "id", "method", "args", "created", ""], reps.map(function (p) {
-        return [p.name, p.id, p.definition.method, JSON.stringify(p.definition.args), ts(p.created),
-          s.writable ? link("delete", function () { managePost("report_delete", { id: p.id }).then(function () { go("manage"); }).catch(function (x) { err(x.message); }); }) : ""];
+      var snaps = r[1].result.snapshots || [], runOut = el("pre", { hidden: "hidden" });
+      out.push(table(["name", "id", "spec", "versions", "snapshots", "created", ""], reps.map(function (p) {
+        var n = snaps.filter(function (x) { return x.name === p.name; }).length;
+        return [p.name, p.id, JSON.stringify(p.spec), String(p.versions), String(n), ts(p.created),
+          s.writable ? el("span", {}, [link("run", function () { managePost("report_run", { name: p.name }).then(function (j) { runOut.hidden = false; runOut.textContent = JSON.stringify(j.result, null, 1); }).catch(function (x) { err(x.message); }); }), " ",
+            link("delete", function () { managePost("report_delete", { name: p.name }).then(function () { go("manage"); }).catch(function (x) { err(x.message); }); })]) : ""];
       })));
+      out.push(runOut);
+      out.push(el("p", { cls: "muted", text: "Same definitions as `pros audit report list`; export a snapshot with `pros audit report export <id> --format csv|html --out FILE`." }));
       out.push(form("Export preview", [el("label", {}, ["format ", el("select", { name: "format" }, ["jsonl", "csv", "html"].map(function (x) { return el("option", { text: x }); }))]), " ",
         el("p", { cls: "muted", text: "Uses the window above. Nothing is written; run `pros audit export` in a terminal to write it." })], "export_preview",
         function (e) { var a = filterArgs(true); return { since: a.since, until: a.until, format: e.format.value }; }));
