@@ -1,0 +1,11 @@
+{
+ "rubric": "architecture-review",
+ "version": "r1",
+ "target_kind": "task",
+ "criteria": [
+  {"id": "C1", "text": "Every stated constraint is addressed or explicitly deferred", "kind": "required"},
+  {"id": "C2", "text": "At least two credible alternatives with trade-offs", "kind": "required"},
+  {"id": "C3", "text": "A verification plan a third party can run", "kind": "required"}
+ ],
+ "outcome_rule": "passed if every required criterion passed; failed if every required criterion failed; partial otherwise; inconclusive if any required criterion has no outcome"
+}

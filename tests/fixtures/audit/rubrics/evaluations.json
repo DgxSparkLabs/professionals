@@ -1,0 +1,16 @@
+{
+ "about": "Evaluations for the ask_delegation fixture. Times are fixture time (T0 = 1800000000). e2 is superseded by e3.",
+ "evaluations": [
+  {"id": "e1", "target": {"kind": "assignment", "id": "m-0000000005"}, "evaluator": {"kind": "automated", "name": "check", "version": "1"},
+   "rubric": "reliability-check", "rubric_version": "r1", "effective_at": 1800000050.0, "supersedes": null,
+   "criteria": [{"id": "T1", "outcome": "passed", "evidence": "check-run:fx-1"}], "status": "passed"},
+  {"id": "e2", "target": {"kind": "task", "id": "m-0000000001"}, "evaluator": {"kind": "automated", "name": "check", "version": "1"},
+   "rubric": "architecture-review", "rubric_version": "r1", "effective_at": 1800000060.0, "supersedes": null,
+   "criteria": [{"id": "C1", "outcome": "passed", "evidence": "check-run:fx-2"}, {"id": "C2", "outcome": "passed", "evidence": "check-run:fx-2"},
+                {"id": "C3", "outcome": "passed", "evidence": "check-run:fx-2"}], "status": "passed"},
+  {"id": "e3", "target": {"kind": "task", "id": "m-0000000001"}, "evaluator": {"kind": "operator", "name": "owner", "version": "1"},
+   "rubric": "architecture-review", "rubric_version": "r1", "effective_at": 1800000120.0, "supersedes": "e2",
+   "criteria": [{"id": "C1", "outcome": "failed", "evidence": "note:fx-3"}, {"id": "C2", "outcome": "passed", "evidence": "note:fx-3"},
+                {"id": "C3", "outcome": "passed", "evidence": "note:fx-3"}], "status": "partial"}
+ ]
+}
