@@ -147,8 +147,8 @@ class Run:
                         self.gap("id_conflict", "spool", ev["t"], ev["t"], 1)
                     continue
                 cur = c.execute(
-                    "INSERT INTO event (id, payload_sha, t, action, actor, origin, provenance, pro, run, session, msg, data, batch) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (eid, sha, ev["t"], ev["action"], ev["actor"], ev["origin"], ev.get("provenance"), ev.get("pro"), ev.get("run"), ev.get("session"), ev.get("msg"), data, self.batch))
+                    "INSERT INTO event (id, payload_sha, t, action, actor, origin, provenance, pro, pro_name, run, session, msg, data, batch) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (eid, sha, ev["t"], ev["action"], ev["actor"], ev["origin"], ev.get("provenance"), ev.get("pro"), ev.get("pro_name"), ev.get("run"), ev.get("session"), ev.get("msg"), data, self.batch))
                 have[eid] = sha
                 self.events += 1
                 self.last_seq = cur.lastrowid
