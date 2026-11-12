@@ -2027,7 +2027,12 @@ def cmd_doctor(a):
     elif a.link:
         link = Path.home() / ".local" / "bin" / "pros"
         ensure(link.parent)
-        if link.is_symlink() or link.exists():
+        if link.exists() and not link.is_symlink():
+            raise Fail(2, "%s exists and is not a link; not touching it. Remove it yourself or call pros by its full path: %s" % (link, me))
+        if link.is_symlink():
+            old = os.readlink(link)
+            if not str(old).endswith("/bin/pros"):
+                raise Fail(2, "%s points to %s, not to a pros install; not touching it" % (link, old))
             link.unlink()
         link.symlink_to(me)
         ok("linked %s -> %s (make sure ~/.local/bin is on PATH)" % (link, me))

@@ -15,7 +15,7 @@
 Paste this into Claude Code:
 
 ```
-Install the Professionals system for me: run `claude plugin marketplace add DgxSparkLabs/professionals` and `claude plugin install professionals@professionals`, then run `~/.claude/plugins/marketplaces/professionals/plugins/professionals/bin/pros doctor --link` and show me `pros list`.
+Install the Professionals system for me: run `claude plugin marketplace add DgxSparkLabs/professionals` and `claude plugin install professionals@professionals`, then run `~/.claude/plugins/marketplaces/professionals/plugins/professionals/bin/pros doctor --link` and show me `~/.local/bin/pros list`.
 ```
 
 You need Claude Code 2.1.224 or newer, `tmux` and `python3`. If one is missing, `pros doctor` says which and how to install it.
@@ -67,6 +67,7 @@ Full recorded run: [tests/fixtures/real-run-1.md](tests/fixtures/real-run-1.md).
 | `speckit-driver` | Drives the spec-kit flow from specify to implement | `pro-speckit-driver` |
 | `exhaustive-researcher` | Complete, dated, sourced research with coverage counts | `pro-exhaustive-researcher` |
 | `professional-smith` | Creates, trains, validates and publishes new professionals | `pro-professional-smith` |
+| `systemd-hardening-auditor` | Audits a systemd service and proposes a hardened drop-in with the risk of each line (created by `professional-smith`) | `pro-systemd-hardening-auditor` |
 
 Each one is also a plain skill, so you can install a single persona on its own: `claude plugin install pro-linux-ops@professionals`.
 
@@ -84,7 +85,7 @@ Useful commands: `pros list`, `pros search <words>`, `pros team`, `pros attach <
 - **Caps.** At most 6 live professionals, chain depth at most 4, a budget of summons per hour, and idle professionals stop after 30 minutes. All are configurable in `~/.professionals/config.json`.
 - **Deadlines.** Every request has one. A stuck or dead target is reported as `stuck: <reason>`, never waited on forever.
 - **Permissions.** Professionals start in `dontAsk` mode with an allowlist taken from their `tools:` line, intersected with a fixed safe list. A missing permission is a clear denial, never a hidden dialog. Your own Claude Code permission settings always apply, and nothing here widens them.
-- **Sandbox.** Professionals run in the Claude Code sandbox where available, with read access denied to sensitive paths you list in `deny_paths`.
+- **Sandbox.** Professionals run in the Claude Code sandbox when your machine supports it (it needs `bubblewrap` and `socat`, and some Linux setups such as stock Ubuntu 24.04+ block it; `pros doctor` tells you). Either way, read access is denied to sensitive paths you list in `deny_paths`, and the shell is limited to an allowlist.
 - **Trust.** Only professionals from marketplaces you have added can be summoned. A professional is text that instructs an agent, so read one before you add a marketplace you do not know.
 - **Peers are not bosses.** A message from another professional is a request. It never outranks what you told the session.
 

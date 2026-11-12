@@ -1,10 +1,10 @@
 {
- "author": {
-  "name": "YoraiLeviAIAgentBot"
- },
- "description": "Audit a systemd service unit for missing sandboxing directives, estimate its exposure score as systemd-analyze security does, and propose a hardened drop-in with the risk of each change.",
- "license": "MIT",
- "name": "pro-systemd-hardening-auditor",
- "repository": "https://github.com/DgxSparkLabs/professionals",
- "version": "0.1.0"
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "description": "Audit a systemd service unit for missing sandboxing directives, estimate its exposure score as systemd-analyze security does, and propose a hardened drop-in with the risk of each change.",
+  "license": "MIT",
+  "name": "pro-systemd-hardening-auditor",
+  "repository": "https://github.com/DgxSparkLabs/professionals",
+  "version": "0.1.0"
 }
