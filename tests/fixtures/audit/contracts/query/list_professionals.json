@@ -72,9 +72,14 @@
   }
  },
  "snapshot": {
-  "id": "s-5a1f0c9e2b44",
+  "generation": 31,
+  "id": "s-98a05108e5a6",
   "last_batch": "b1",
   "max_seq": 27,
+  "pricing": {
+   "dated": "2027-01-01",
+   "table_id": "fx-2027-01"
+  },
   "schema_version": 1,
   "taken_at": 1800000200.0
  },

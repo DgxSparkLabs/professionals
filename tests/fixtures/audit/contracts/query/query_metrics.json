@@ -45,24 +45,75 @@
      "input_tokens": 120,
      "output_tokens": 80
     },
+    "cache_write_split": {
+     "1h": 0,
+     "5m": 20,
+     "unsplit": 20
+    },
+    "confidence": {
+     "mapped": 0,
+     "unassigned": 30,
+     "verified": 220
+    },
+    "cost_usd_api_equivalent": 0.001644,
+    "coverage": [
+     4,
+     4
+    ],
+    "cutoff": 1800000200.0,
+    "event_time": "exchange timestamp",
     "exchanges": 4,
     "linked_task": 220,
+    "price_state": "priced",
     "root_inclusive": {
      "m-0000000001": 220
     },
     "session_only": 30,
+    "source_quality": [
+     {
+      "quality": "observed",
+      "source": "transcript"
+     },
+     {
+      "quality": "missing",
+      "source": "session_counter"
+     }
+    ],
     "total_unique": 250,
     "unavailable": null,
-    "unavailable_note": "no session counter in source"
+    "unavailable_note": "no session counter in source",
+    "unpriced_share": [
+     0,
+     250
+    ],
+    "unpriced_tokens": 0
    },
    "assigned_work": {
     "assignments": 2,
     "child_assignments": 1,
-    "root_tasks": 1
+    "confidence": {
+     "mapped": 0,
+     "unassigned": 0,
+     "verified": 2
+    },
+    "coverage": [
+     2,
+     2
+    ],
+    "cutoff": 1800000200.0,
+    "event_time": "assignment created",
+    "refusals_by_reason": {},
+    "root_tasks": 1,
+    "source_quality": [
+     {
+      "quality": "observed",
+      "source": "emitter"
+     }
+    ]
    },
    "deadline_miss": {
     "all": {
-     "cancelled": 0,
+     "cancelled": null,
      "eligible_elapsed": 2,
      "late_answers_among_missed": 1,
      "missed": 1,
@@ -73,7 +124,7 @@
      ]
     },
     "child_assignments": {
-     "cancelled": 0,
+     "cancelled": null,
      "eligible_elapsed": 1,
      "late_answers_among_missed": 0,
      "missed": 0,
@@ -83,8 +134,19 @@
       1
      ]
     },
+    "confidence": {
+     "mapped": 0,
+     "unassigned": 0,
+     "verified": 2
+    },
+    "coverage": [
+     2,
+     2
+    ],
+    "cutoff": 1800000200.0,
+    "event_time": "deadline",
     "root_tasks": {
-     "cancelled": 0,
+     "cancelled": null,
      "eligible_elapsed": 1,
      "late_answers_among_missed": 1,
      "missed": 1,
@@ -94,19 +156,36 @@
       1
      ]
     },
-    "rule": "deadline vs answered_at; the overdue flag is evidence only"
+    "rule": "deadline vs answered_at; the overdue flag is evidence only",
+    "source_quality": [
+     {
+      "quality": "observed",
+      "source": "emitter"
+     }
+    ]
    },
    "durations": {
     "active_model_tool_time": {
      "coverage": [
-      0,
+      2,
       2
      ],
      "eligible": 2,
-     "n": 0,
-     "p50_s": null,
-     "p95_s": null
+     "n": 2,
+     "p50_s": 1.0,
+     "p95_s": 40.9
     },
+    "confidence": {
+     "mapped": 0,
+     "unassigned": 0,
+     "verified": 2
+    },
+    "coverage": [
+     2,
+     2
+    ],
+    "cutoff": 1800000200.0,
+    "event_time": "answered_at",
     "percentile": "nearest rank",
     "queue": {
      "coverage": [
@@ -127,7 +206,17 @@
      "n": 2,
      "p50_s": 0.09,
      "p95_s": 40.69
-    }
+    },
+    "source_quality": [
+     {
+      "quality": "observed",
+      "source": "emitter"
+     },
+     {
+      "quality": "observed",
+      "source": "transcript"
+     }
+    ]
    },
    "evaluation": {
     "child_assignments": {
@@ -144,12 +233,24 @@
       1,
       1
      ],
+     "not_completed": 0,
      "pass_rate": [
       1,
       1
      ],
      "unit": "child assignment"
     },
+    "confidence": {
+     "mapped": 0,
+     "unassigned": 0,
+     "verified": 2
+    },
+    "coverage": [
+     2,
+     2
+    ],
+    "cutoff": 1800000200.0,
+    "event_time": "answered_at",
     "root_tasks": {
      "completed_eligible": 1,
      "conclusive": 1,
@@ -164,12 +265,19 @@
       1,
       1
      ],
+     "not_completed": 0,
      "pass_rate": [
       0,
       1
      ],
      "unit": "root task"
-    }
+    },
+    "source_quality": [
+     {
+      "quality": "observed",
+      "source": "emitter"
+     }
+    ]
    }
   },
   "group_by": [
@@ -177,15 +285,20 @@
   ],
   "window": {
    "cutoff": 1800000200.0,
-   "event_time": "assignment created",
+   "event_time": "per_card",
    "from": 1800000000.0,
    "to": 1800000200.0
   }
  },
  "snapshot": {
-  "id": "s-5a1f0c9e2b44",
+  "generation": 31,
+  "id": "s-98a05108e5a6",
   "last_batch": "b1",
   "max_seq": 27,
+  "pricing": {
+   "dated": "2027-01-01",
+   "table_id": "fx-2027-01"
+  },
   "schema_version": 1,
   "taken_at": 1800000200.0
  },

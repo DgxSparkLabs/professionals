@@ -1,2 +1,2 @@
-{"action": "rate", "actor": "system", "data": {"allowed": false, "limit": 20, "live": 3, "live_limit": 6, "summons_last_hour": 20}, "id": "c0ffee00-1", "origin": "live", "t": 1800000001.0, "v": 1}
-{"action": "msg_refused", "actor": "user", "data": {"reason": "cap_hourly", "task": "cap-1", "to": "system-designer"}, "id": "c0ffee00-2", "origin": "live", "t": 1800000001.1, "v": 1}
+{"action": "rate", "actor": "system", "data": {"allowed": false, "limit": 20, "live": 3, "live_limit": 6, "summons_last_hour": 20}, "id": "c0ffee00deadbeef-1", "origin": "live", "t": 1800000001.0, "v": 1}
+{"action": "msg_refused", "actor": "user", "data": {"reason": "cap_hourly", "task": "cap-1", "to": "system-designer"}, "id": "c0ffee00deadbeef-2", "origin": "live", "t": 1800000001.1, "v": 1}

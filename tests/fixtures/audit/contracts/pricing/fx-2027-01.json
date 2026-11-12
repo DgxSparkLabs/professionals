@@ -1,0 +1,15 @@
+{
+ "dated": "2027-01-01",
+ "models": {
+  "claude-sonnet-4-5": {
+   "cache_read": 0.3,
+   "cache_write_1h": 6,
+   "cache_write_5m": 3.75,
+   "input": 3,
+   "output": 15
+  }
+ },
+ "note": "fixture rates, not a real price list",
+ "table_id": "fx-2027-01",
+ "unit": "usd_per_million_tokens"
+}

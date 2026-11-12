@@ -93,7 +93,8 @@
    "required": [
     "pseudonyms",
     "dropped_fields",
-    "salt_stored"
+    "salt_stored",
+    "pseudonymized"
    ],
    "properties": {
     "pseudonyms": {
@@ -111,6 +112,18 @@
     },
     "salt_stored": {
      "const": false
+    },
+    "pseudonymized": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 32
+     }
+    },
+    "time_bucket_s": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 3600
     }
    }
   },
@@ -280,6 +293,8 @@
     "schema_version",
     "last_batch",
     "max_seq",
+    "generation",
+    "pricing",
     "taken_at"
    ],
    "properties": {
@@ -300,6 +315,29 @@
     },
     "max_seq": {
      "$ref": "#/$defs/count"
+    },
+    "generation": {
+     "$ref": "#/$defs/count"
+    },
+    "pricing": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "table_id",
+      "dated"
+     ],
+     "properties": {
+      "table_id": {
+       "type": "string",
+       "maxLength": 32,
+       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"
+      },
+      "dated": {
+       "type": "string",
+       "maxLength": 10,
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      }
+     }
     },
     "taken_at": {
      "$ref": "#/$defs/epoch"

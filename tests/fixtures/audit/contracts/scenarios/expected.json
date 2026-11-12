@@ -29,6 +29,12 @@
    "pre_audit"
   ]
  },
+ "mapped_no_header": {
+  "confidence": "mapped",
+  "note": "mapped places the delivery only; a stub delivery has no header",
+  "transcript_header": false,
+  "usage_owner": "session_only"
+ },
  "missing_parent": {
   "assignments": 1,
   "attached_by_guess": false,

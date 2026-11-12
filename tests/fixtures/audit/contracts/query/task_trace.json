@@ -88,9 +88,15 @@
     "own_tokens": {
      "cache_read": 30,
      "cache_write": 0,
+     "cache_write_1h": 0,
+     "cache_write_5m": 0,
+     "cache_write_unsplit": 0,
+     "cost_usd_api_equivalent": 0.000939,
      "input": 60,
      "output": 50,
-     "total": 140
+     "price_state": "priced",
+     "total": 140,
+     "unpriced_tokens": 0
     },
     "parent": null,
     "run": "r-0000000000b1",
@@ -140,9 +146,15 @@
     "own_tokens": {
      "cache_read": 0,
      "cache_write": 20,
+     "cache_write_1h": 0,
+     "cache_write_5m": 20,
+     "cache_write_unsplit": 20,
+     "cost_usd_api_equivalent": 0.000495,
      "input": 40,
      "output": 20,
-     "total": 80
+     "price_state": "priced",
+     "total": 80,
+     "unpriced_tokens": 0
     },
     "parent": "m-0000000001",
     "run": "r-0000000000b2",
@@ -177,6 +189,100 @@
   },
   "gaps": [],
   "root": "m-0000000001",
+  "spans": [
+   {
+    "end": 1800000002.23,
+    "kind": "model_request",
+    "links": [],
+    "msg": "m-0000000001",
+    "parent_span": null,
+    "quality": "derived_wall",
+    "session": "00000000-0000-4000-8000-000000000002",
+    "span": "sp-0000000001",
+    "start": 1800000001.23
+   },
+   {
+    "end": 1800000003.23,
+    "kind": "tool",
+    "links": [],
+    "msg": "m-0000000001",
+    "name": "Read",
+    "parent_span": null,
+    "quality": "derived_wall",
+    "session": "00000000-0000-4000-8000-000000000002",
+    "span": "sp-0000000002",
+    "start": 1800000002.33
+   },
+   {
+    "end": 1800000042.23,
+    "kind": "model_request",
+    "links": [
+     "sp-0000000002",
+     "sp-0000000005"
+    ],
+    "msg": "m-0000000001",
+    "parent_span": null,
+    "quality": "derived_wall",
+    "session": "00000000-0000-4000-8000-000000000002",
+    "span": "sp-0000000003",
+    "start": 1800000003.23
+   },
+   {
+    "end": 1800000002.7,
+    "kind": "model_request",
+    "links": [],
+    "msg": "m-0000000005",
+    "parent_span": null,
+    "quality": "derived_wall",
+    "session": "00000000-0000-4000-8000-000000000001",
+    "span": "sp-0000000004",
+    "start": 1800000001.7
+   },
+   {
+    "end": 1800000001.79,
+    "kind": "delegation",
+    "links": [],
+    "msg": "m-0000000005",
+    "parent_span": "sp-0000000001",
+    "quality": "derived_wall",
+    "session": "00000000-0000-4000-8000-000000000002",
+    "span": "sp-0000000005",
+    "start": 1800000001.32
+   },
+   {
+    "end": 1800000002.9,
+    "kind": "wait",
+    "links": [],
+    "msg": "m-0000000001",
+    "parent_span": null,
+    "quality": "derived_wall",
+    "session": null,
+    "span": "sp-0000000006",
+    "start": 1800000000.85
+   },
+   {
+    "end": 1800000038.29,
+    "kind": "wait",
+    "links": [],
+    "msg": "m-0000000001",
+    "parent_span": null,
+    "quality": "derived_wall",
+    "session": null,
+    "span": "sp-0000000007",
+    "start": 1800000003.46
+   },
+   {
+    "end": 1800000042.12,
+    "kind": "wait",
+    "links": [],
+    "msg": "m-0000000001",
+    "parent_span": null,
+    "quality": "derived_wall",
+    "session": null,
+    "span": "sp-0000000008",
+    "start": 1800000042.09
+   }
+  ],
   "tasks": [
    "fx-root",
    "t-00000001"
@@ -185,24 +291,42 @@
    "inclusive": {
     "cache_read": 30,
     "cache_write": 20,
+    "cache_write_1h": 0,
+    "cache_write_5m": 20,
+    "cache_write_unsplit": 20,
+    "cost_usd_api_equivalent": 0.001434,
     "input": 100,
     "output": 70,
-    "total": 220
+    "price_state": "priced",
+    "total": 220,
+    "unpriced_tokens": 0
    },
    "own": {
     "m-0000000001": {
      "cache_read": 30,
      "cache_write": 0,
+     "cache_write_1h": 0,
+     "cache_write_5m": 0,
+     "cache_write_unsplit": 0,
+     "cost_usd_api_equivalent": 0.000939,
      "input": 60,
      "output": 50,
-     "total": 140
+     "price_state": "priced",
+     "total": 140,
+     "unpriced_tokens": 0
     },
     "m-0000000005": {
      "cache_read": 0,
      "cache_write": 20,
+     "cache_write_1h": 0,
+     "cache_write_5m": 20,
+     "cache_write_unsplit": 20,
+     "cost_usd_api_equivalent": 0.000495,
      "input": 40,
      "output": 20,
-     "total": 80
+     "price_state": "priced",
+     "total": 80,
+     "unpriced_tokens": 0
     }
    },
    "residual_note": "no session counter in source",
@@ -213,9 +337,15 @@
      "tokens": {
       "cache_read": 0,
       "cache_write": 0,
+      "cache_write_1h": 0,
+      "cache_write_5m": 0,
+      "cache_write_unsplit": 0,
+      "cost_usd_api_equivalent": 0.00021,
       "input": 20,
       "output": 10,
-      "total": 30
+      "price_state": "priced",
+      "total": 30,
+      "unpriced_tokens": 0
      }
     }
    ],
@@ -261,9 +391,14 @@
   ]
  },
  "snapshot": {
-  "id": "s-5a1f0c9e2b44",
+  "generation": 31,
+  "id": "s-98a05108e5a6",
   "last_batch": "b1",
   "max_seq": 27,
+  "pricing": {
+   "dated": "2027-01-01",
+   "table_id": "fx-2027-01"
+  },
   "schema_version": 1,
   "taken_at": 1800000200.0
  },
