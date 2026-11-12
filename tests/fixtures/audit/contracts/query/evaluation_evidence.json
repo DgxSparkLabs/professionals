@@ -1,0 +1,110 @@
+{
+ "api_version": 1,
+ "coverage": {
+  "cutoff": 1800000200.0,
+  "degraded": false,
+  "gaps": [],
+  "pre_audit_before": null,
+  "sources": [
+   {
+    "from_t": 1800000000.0,
+    "quality": "observed",
+    "rows": 27,
+    "source": "emitter",
+    "to_t": 1800000130.0,
+    "versions": [
+     "0.3.0"
+    ]
+   },
+   {
+    "from_t": 1800000001.0,
+    "quality": "observed",
+    "rows": 7,
+    "source": "transcript",
+    "to_t": 1800000042.0,
+    "versions": [
+     "2.1.322"
+    ]
+   },
+   {
+    "from_t": null,
+    "quality": "missing",
+    "rows": 0,
+    "source": "session_counter",
+    "to_t": null
+   }
+  ]
+ },
+ "method": "evaluation_evidence",
+ "result": {
+  "effective": {
+   "criteria": [
+    {
+     "id": "C1",
+     "outcome": "failed"
+    },
+    {
+     "id": "C2",
+     "outcome": "passed"
+    },
+    {
+     "id": "C3",
+     "outcome": "passed"
+    }
+   ],
+   "effective_at": 1800000120.0,
+   "eval": "e3",
+   "evaluator": "owner",
+   "evaluator_kind": "operator",
+   "rubric": "architecture-review",
+   "rubric_version": "r1",
+   "status": "partial",
+   "supersedes": "e2"
+  },
+  "history": [
+   {
+    "effective_at": 1800000060.0,
+    "eval": "e2",
+    "evaluator_kind": "automated",
+    "status": "passed",
+    "superseded_by": "e3"
+   },
+   {
+    "criteria": [
+     {
+      "id": "C1",
+      "outcome": "failed"
+     },
+     {
+      "id": "C2",
+      "outcome": "passed"
+     },
+     {
+      "id": "C3",
+      "outcome": "passed"
+     }
+    ],
+    "effective_at": 1800000120.0,
+    "eval": "e3",
+    "evaluator": "owner",
+    "evaluator_kind": "operator",
+    "rubric": "architecture-review",
+    "rubric_version": "r1",
+    "status": "partial",
+    "supersedes": "e2"
+   }
+  ],
+  "precedence_note": "latest non-superseded; operator outranks automated; all kept",
+  "target": "m-0000000001"
+ },
+ "snapshot": {
+  "id": "s-5a1f0c9e2b44",
+  "last_batch": "b1",
+  "max_seq": 27,
+  "schema_version": 1,
+  "taken_at": 1800000200.0
+ },
+ "units": {
+  "time": "epoch_s_utc"
+ }
+}
