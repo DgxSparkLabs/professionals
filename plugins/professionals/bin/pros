@@ -460,6 +460,49 @@ def default_name(base):
     return re.sub(r"[^a-z0-9-]+", "-", base.lower()).strip("-")[:40].strip("-")
 
 
+IMPORT_RE = re.compile(r"(?:^|(?<=\s))@(\S+)")
+IMPORT_MAX_DEPTH, IMPORT_MAX_FILES, IMPORT_MAX_BYTES = 3, 20, 256 * 1024
+
+
+def external_imports(path) -> list:
+    """Files pulled in by `@path` imports of CLAUDE.md/AGENTS.md that lie outside the folder: [(realpath, bytes|None)] (read-only, depth 3, capped)."""
+    root = os.path.realpath(str(path))
+    out, seen = [], set()
+
+    def walk(f, depth):
+        if depth > IMPORT_MAX_DEPTH or len(out) >= IMPORT_MAX_FILES:
+            return
+        try:
+            text = Path(f).read_bytes()[:IMPORT_MAX_BYTES].decode("utf-8", "replace")
+        except OSError:
+            return
+        for m in IMPORT_RE.finditer(text):
+            tok = m.group(1).rstrip(",.;:)\"'`")
+            if not tok or not (tok.startswith("~") or "/" in tok or "." in tok):
+                continue
+            t = os.path.realpath(os.path.join(os.path.dirname(str(f)), os.path.expanduser(tok)))
+            if t in seen or len(out) >= IMPORT_MAX_FILES:
+                continue
+            seen.add(t)
+            inside = t == root or t.startswith(root + os.sep)
+            data = None
+            if os.path.isfile(t):
+                if not inside:
+                    try:
+                        with open(t, "rb") as fh:
+                            data = fh.read(IMPORT_MAX_BYTES)
+                    except OSError:
+                        data = None
+                walk(t, depth + 1)
+            if not inside:
+                out.append((t, data))
+
+    for rel in ("CLAUDE.md", "AGENTS.md"):
+        if (Path(path) / rel).is_file():
+            walk(Path(path) / rel, 1)
+    return out
+
+
 def folder_scan(path) -> dict:
     """What would run or widen permissions when Claude opens this folder, plus a content hash (R-V2-2)."""
     h, info = hashlib.sha256(), {"files": [], "hooks": [], "mcp": [], "allow": [], "default_mode": ""}
@@ -492,6 +535,8 @@ def folder_scan(path) -> dict:
         if isinstance(perms.get("allow"), list):
             info["allow"] += [str(x) for x in perms["allow"]]
         info["default_mode"] = str(perms.get("defaultMode") or info["default_mode"])
+    for t, data in external_imports(path):
+        h.update(b"import\0" + t.encode() + b"\0" + (b"missing" if data is None else data) + b"\0")
     info["hash"] = h.hexdigest()[:24]
     info["code"] = bool(info["hooks"] or info["mcp"])
     return info
@@ -682,9 +727,37 @@ def agents_live():
     try:
         r = subprocess.run(claude_cmd() + ["agents", "--json"], capture_output=True, text=True, timeout=5)
         d = json.loads(r.stdout or "[]")
-        return d if r.returncode == 0 and isinstance(d, list) else None
+        if r.returncode != 0 or not isinstance(d, list):
+            return None
+        seen, out = set(), []
+        for a in d:  # one row per process: two processes can share one sessionId after a double resume (R-V2-3)
+            pid = a.get("pid") if isinstance(a, dict) else None
+            if pid is not None:
+                if pid in seen:
+                    continue
+                seen.add(pid)
+            out.append(a)
+        return out
     except Exception:  # noqa: BLE001
         return None
+
+
+def shared_sessions(live) -> dict:
+    """sessionId -> pids, for ids held by more than one live process."""
+    by = {}
+    for a in live or []:
+        if isinstance(a, dict) and a.get("sessionId") and a.get("pid") is not None:
+            by.setdefault(a["sessionId"], []).append(a["pid"])
+    return {k: v for k, v in by.items() if len(v) > 1}
+
+
+def warn_same_folder(folder, live):
+    """FR-V2-02: another live Claude session already works in this folder (a warning, never a refusal)."""
+    real = os.path.realpath(str(folder))
+    other = [a for a in live or [] if isinstance(a, dict) and a.get("cwd") and os.path.realpath(str(a["cwd"])) == real]
+    if other:
+        print("WARNING: another live Claude session runs in %s (%s); two sessions in one folder can edit the same files." % (
+            real, ", ".join(str(a.get("name") or a.get("sessionId") or a.get("pid")) for a in other)), file=sys.stderr)
 
 
 def decide_start(name, workdir, fresh, fork, want):
@@ -716,7 +789,7 @@ def decide_start(name, workdir, fresh, fork, want):
         return "fork", rid, "--fork"
     if live is None:
         return "fork", rid, "could not tell whether it is live elsewhere"
-    if any(a.get("sessionId") == rid for a in live):
+    if any(a.get("sessionId") == rid for a in live) or rid in shared_sessions(live):
         return "fork", rid, "session is live elsewhere"
     return "resume", rid, ""
 
@@ -2213,6 +2286,8 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
         if rec:
             drop_session(rec, "died")
         hist_reconcile(name, {r.get("session_id") for r in live_for(name)})
+        if folder:
+            warn_same_folder(workdir, agents_live())
         retry_why = ""
         for attempt in (0, 1):
             if attempt:
@@ -2862,6 +2937,9 @@ def cmd_doctor(a):
                 fail(str(e), "no usable backup; the broken file is untouched at %s" % reg_path())
         else:
             fail(str(e), "pros doctor --repair (user only)")
+    for sid, pids in sorted(shared_sessions(agents_live()).items()):
+        fail("session %s is held by %d live processes (pids %s): a double resume split its context" % (sid, len(pids), ", ".join(map(str, pids))),
+             "close all but one of them; pros forks instead of resuming it")
     me, where = os.path.realpath(__file__), shutil.which("pros")
     if where and os.path.realpath(where) == me:
         ok("pros is on PATH: " + where)

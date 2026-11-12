@@ -49,6 +49,7 @@ def main():
                     if os.path.exists(os.path.join(FAKE_DIR, n + ".pid")):
                         continue  # the process is gone: not listed
                 out.append(row)
+        out += json.loads(os.environ.get("FAKE_AGENTS_EXTRA") or "[]")  # extra rows: other live sessions (pid, cwd, sessionId)
         print(json.dumps(out))
         return 0
     if ARGV[:2] == ["plugin", "validate"]:
