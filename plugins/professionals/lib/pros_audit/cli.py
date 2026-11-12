@@ -151,7 +151,7 @@ def main(argv, home, require_user, now=None, out=None, err=None):
     if args.sub in EVAL_SUBS:
         return run(argv, home, out, err, None, now() if callable(now) else now)
     if args.sub == "import":
-        return run_import(home, args, out)
+        return run_import(home, args, out, err)
     if args.sub in ("report", "compare"):
         from . import reports
         return reports.run_cli(args, home, out, err, now() if callable(now) else now)
@@ -179,16 +179,25 @@ def main(argv, home, require_user, now=None, out=None, err=None):
     return 0
 
 
-def run_import(home, args, out):
-    """Spool -> store (idempotent), project evaluations, optional backfill, then usage from transcripts (rebuilds the derived tables)."""
+def run_import(home, args, out, err=None):
+    """Spool -> store (idempotent), project evaluations, optional backfill, then usage from transcripts (rebuilds the derived tables).
+
+    A store that cannot be written (full disk, I/O error, newer schema) is exit 5 with one line, never a traceback: each batch is one
+    transaction, so nothing partial is committed and the spool files stay for the next import."""
     from . import importer
-    res = {"spool": importer.drain(home)}
-    if args.backfill:
-        from . import backfill
-        res["backfill"] = backfill.backfill(home)
-    if not args.no_usage:
-        from . import usage
-        res["usage"] = usage.import_usage(home)
+    from . import store as S
+    res = {}
+    try:
+        res["spool"] = importer.drain(home)
+        if args.backfill:
+            from . import backfill
+            res["backfill"] = backfill.backfill(home)
+        if not args.no_usage:
+            from . import usage
+            res["usage"] = usage.import_usage(home)
+    except (sqlite3.Error, OSError, S.StoreError) as e:
+        print("pros: import stopped (%s: %s); committed batches stay, unread spool files are kept for the next import" % (type(e).__name__, e), file=err or sys.stderr)
+        return EXIT["store_unavailable"]
     if args.json:
         print(json.dumps(res, sort_keys=True, default=str), file=out)
     else:

@@ -1,6 +1,6 @@
 # professionals: audit, observability and evaluation (spec sheet)
 
-Status: planned. Step A (runtime map and fixtures) is done; steps B to G are not built. Evidence pinned at professionals `c42af9f` and [claude-cost-tracker](https://github.com/talafek96/claude-cost-tracker) `bb5eb9f`.
+Status: first release shipped in 0.3.0 (steps A to G; the release gate is `tests/test_audit_release.py`). Operations: [../audit-operations.md](../audit-operations.md). Evidence pinned at professionals `c42af9f` and [claude-cost-tracker](https://github.com/talafek96/claude-cost-tracker) `bb5eb9f`.
 
 ## 1. Goal
 

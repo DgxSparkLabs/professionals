@@ -40,13 +40,14 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -113,11 +114,33 @@ def read_json(path, default=None):
         return default
 
 
+def ensure_private(p: Path) -> Path:
+    """mkdir -p with 0700 for every directory from run/ down to p (message bodies and session state live there)."""
+    root = run_dir()
+    try:
+        rel = Path(p).relative_to(root)
+    except ValueError:
+        return ensure(Path(p))
+    d = root
+    for part in ("",) + rel.parts:
+        d = d / part if part else d
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if stat.S_IMODE(d.stat().st_mode) != 0o700:
+            os.chmod(d, 0o700)
+    return Path(p)
+
+
 def write_json(path, obj):
+    """Atomic JSON write. Files under run/ (messages with full task bodies, session state) are 0600 in 0700 dirs."""
     path = Path(path)
-    ensure(path.parent)
+    private = str(path).startswith(str(run_dir()) + os.sep)
+    ensure_private(path.parent) if private else ensure(path.parent)
     tmp = path.with_name(".%s.%d.tmp" % (path.name, os.getpid()))
-    tmp.write_text(json.dumps(obj, indent=1, sort_keys=True), encoding="utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600 if private else 0o644)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps(obj, indent=1, sort_keys=True))
+    if private:
+        os.chmod(tmp, 0o600)  # an old tmp left by a crash keeps its mode through O_TRUNC
     os.replace(tmp, path)
 
 
@@ -131,8 +154,8 @@ def cfg() -> dict:
 
 def log(event, **kw):
     try:
-        ensure(run_dir("log"))
-        with open(run_dir("log", "events.log"), "a", encoding="utf-8") as f:
+        ensure_private(run_dir("log"))
+        with open(os.open(run_dir("log", "events.log"), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600), "a", encoding="utf-8") as f:
             f.write(json.dumps(dict(t=round(now(), 2), ev=event, **kw)) + "\n")
     except OSError:
         pass

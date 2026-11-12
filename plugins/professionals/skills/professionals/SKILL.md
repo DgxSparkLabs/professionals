@@ -42,6 +42,7 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros doctor [--link]` | Check tmux, claude, python3 and the registry; `--link` puts `pros` on your PATH |
 | `pros add <dir> [--name N] [--allow R] [--mode M]` | User only: register a folder as a professional |
 | `pros remove`, `enable`, `disable`, `keep [--off]`, `rate <name> good\|bad` | User only: manage the list (never from a professional session) |
+| `pros audit status\|summary\|trace\|explain\|verdict\|report\|export\|serve` | User only: the local audit of tasks, delegation, usage and verdicts (docs/audit-operations.md). A professional session is refused (exit 4); do not try it |
 
 `pros <command> --help` shows the exact flags.
 
