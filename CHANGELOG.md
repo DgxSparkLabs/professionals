@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.4.0
+
+- Wake on message: `pros send` to an allowlisted professional that is not running starts it, as `ask` already did, instead of exit 5. The caps are checked first and still refuse with exit 4 before anything is stored. Otherwise the message is stored and queued before the start, so a start that fails keeps it queued (for the next start, or until its deadline sends the usual timeout note). `--no-wake` keeps the old refusal.
+- Resend counter: after a restart each unanswered task is resent once (`resends` on the message, `max_resends` in config.json, default 1). A further restart, or a passed deadline, fails the task with one note to the sender instead of redelivering it again; before, a crash loop redelivered it on every start.
+- `pros wait` and `ask` return the newest real reply to the latest ask of a task id: a late reply now wins over the deadline notice (exit 0 instead of 5), and a reused task id no longer returns an earlier ask's reply. The notice is returned only when no real reply exists.
+- A wait ends with exit 5 (`stuck: <reason>`) when its target is stuck (busy with no activity for `stuck_min`), instead of waiting to the timeout; the audit `wait_end` outcome is `pending_target_stuck`.
+- `pros audit status` before the first `pros audit import` prints one line ("no audit data yet; run: pros audit import") and exits 5, without a traceback.
+- A failed start no longer fails the messages queued for that professional.
+- Audit fixture `ask_delegation.json` updated for the late-reply wait (it now exits 0 and reads the reply; the inbox is empty). Only the records this change affects were taken from a fresh `tests/audit_fixtures.py` run, because a full rerun shifts timings that the golden cards and contract fixtures are pinned to; `schema.json` is unchanged (a full rerun yields the same schema).
+
 ## 0.3.1
 
 - README section "Audit data on your machine": what the default metadata capture records, where it is stored, file modes, retention, and how to turn it off, export and purge.

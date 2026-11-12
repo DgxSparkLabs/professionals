@@ -7,6 +7,7 @@ import datetime
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 import time
@@ -121,6 +122,8 @@ class Query:
     def _open(self):
         if isinstance(self.store, sqlite3.Connection):
             return self.store, False
+        if not os.path.exists(str(self.store)):
+            raise AuditError("store_unavailable", "no audit data yet; run: pros audit import")
         try:
             c = sqlite3.connect("file:%s?mode=ro" % self.store, uri=True, isolation_level=None, timeout=5)
             c.row_factory = sqlite3.Row
@@ -875,6 +878,11 @@ class Query:
         def fn(conn, now, cov):
             n = lambda t: conn.execute("SELECT COUNT(*) FROM %s" % t).fetchone()[0]
             return {"events": n("event"), "assignments": n("assignment"), "exchanges": n("exchange"), "evaluations": n("evaluation"), "runs": n("run")}, []
-        env = self._run("list_professionals", {}, fn)
+        try:
+            env = self._run("list_professionals", {}, fn)
+        except AuditError as e:  # before the first import: one line from the CLI, never a traceback
+            return e.envelope()
+        except sqlite3.Error as e:
+            return AuditError("store_unavailable", "store error: %s" % type(e).__name__).envelope()
         env["method"] = "status"
         return env

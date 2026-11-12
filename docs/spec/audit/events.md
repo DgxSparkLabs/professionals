@@ -75,7 +75,7 @@ Notes from the evidence:
 
 - **Attempt** = one observed delivery: a `msg_injected` event, or one verified transcript header row in a session (B1 §4). `dup` is evidence of a possible double delivery, not a count. Restart re-sends (`resend_unanswered`) are further `msg_injected` events on the same message id. A genuine re-execution is a new message (new id) and a new assignment; the runtime refuses same task id, same body and same target.
 - **Waits are not task outcomes.** Waiter outcomes live in `wait_start`/`wait_end` and never change a message's delivery or deadline status. `shadowed_reply` is derived by the query layer: a wait that returned `note` while a non-system reply for the same task already existed.
-- **`wait_end.outcome`** distinguishes `pending` from `pending_target_stuck` (a stuck target exits 3, not 5; B10 E-261). `exit` is stored as returned.
+- **`wait_end.outcome`** distinguishes `pending` from `pending_target_stuck`. Since 0.4.0 a stuck target ends the wait with exit 5 and outcome `pending_target_stuck` (before 0.4.0 it exited 3 at the timeout; B10 E-261). `exit` is stored as returned.
 - Fail/refusal events carry the failure reason as an enum so the "failures by reason" card counts them without text.
 
 ## 4. Backfill

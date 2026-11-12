@@ -27,12 +27,12 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros summon <name> [--scope project\|global] [--mode M] [--model M] [--allow-persona-tools] [--fresh] [--fork] [--session id]` | Start the professional, reuse the live one, or resume its last good session (`resumed=<id>`); `--fresh` starts clean, `--fork` copies the context into a new session |
 | `pros sessions <name> [--json]` | Session history: ids, dates, task counts, score and transcript size |
 | `pros team` | Live professionals with state, current task and summoner |
-| `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note]` | Send a message; queued if the target is busy |
+| `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note] [--no-wake]` | Send a message; queued if the target is busy; starts an allowlisted professional that is not running (caps still apply), unless `--no-wake` |
 | `pros read <id>` | Read a message that arrived as a pointer |
 | `pros inbox` | Replies waiting for you (for sessions that are not professionals) |
 | `pros reply <task> <text>` or `pros reply <task> - <<'EOF'` | Answer a task by its id. Use the quoted heredoc form for any text with backticks, quotes, `$` or newlines: Claude Code denies those inline |
 | `pros ask <to> <text> [--wait 90] [--task ID]` | Send a task and wait up to 90 s for the answer; starts an allowlisted professional that is not running; the same `--task` id and text again returns the stored answer |
-| `pros wait <task> [--timeout 90]` | Keep waiting for an earlier ask; can be repeated |
+| `pros wait <task> [--timeout 90]` | Keep waiting for an earlier ask; can be repeated; returns a late real reply in preference to the timeout notice |
 | `pros stop <name>` or `pros stop --all` | Stop one professional or all of them |
 | `pros reap` | Stop idle professionals past the idle limit |
 | `pros attach <name>` | Print the tmux line to watch a professional live |
@@ -92,4 +92,5 @@ Every message the CLI delivers starts with one header line, written by the CLI f
 
 - At most 6 live professionals, chain depth at most 4, idle professionals stop after 30 minutes. A summon past a limit is refused with the reason.
 - Every request has a deadline. A stuck target is reported as `stuck: <reason>`, never waited on forever.
+- After a restart an unanswered task is resent once, marked as a possible duplicate; it is not resent again.
 - Only professionals from marketplaces the user has added can be summoned.

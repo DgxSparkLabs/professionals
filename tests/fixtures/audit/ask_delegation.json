@@ -50,8 +50,8 @@
     "--timeout",
     "3"
    ],
-   "exit": 5,
-   "out": "[pro-msg id=m-0000000002 from=pro to=user task=fx-root kind=note reply-to=pro chain=user]\ntimeout: task fx-root to system-designer got no answer by its deadline (target state: busy)",
+   "exit": 0,
+   "out": "[pro-msg id=m-0000000003 from=system-designer to=user task=fx-root kind=reply reply-to=system-designer chain=system-designer]\nask-exit=0 [pro-msg id=m-0000000004 from=reliability-reviewer to=system-designer task=t-00000001 kind=reply reply-to=reliability-reviewer chain=system-designer>reliability-reviewer] CANARY-CHILD-BODY-42 branch r | CANARY-ROOT-REPLY-43 review done",
    "t": 1800000042.09
   },
   {
@@ -59,7 +59,7 @@
     "inbox"
    ],
    "exit": 0,
-   "out": "inbox for user: 1 unread\nm-0000000003 task=fx-root from=system-designer kind=reply  ask-exit=0 [pro-msg id=m-0000000004 from=reliability-reviewer to=system-designer task=t-00000001 kin\nread one with: pros read <id>",
+   "out": "inbox for user: 0 unread",
    "t": 1800000042.17
   },
   {
@@ -169,7 +169,6 @@
    "version": 1
   },
   "registry.sum": "7951a3796e84b95521870c1838f88251cd2f452821aa7544fdcd6d6f1c4ffd9a",
-  "run/inbox/m-0000000003": "",
   "run/msgs/m-0000000001.json": {
    "answered_at": 1800000041.92,
    "attempts": 0,
@@ -225,9 +224,10 @@
    "kind": "reply",
    "parent": "m-0000000001",
    "project": "$PROJECT/.professionals/system-designer",
+   "read_at": 1800000042.16,
    "reply_to": "system-designer",
    "session": null,
-   "state": "queued",
+   "state": "answered",
    "task": "fx-root",
    "to": "user"
   },
