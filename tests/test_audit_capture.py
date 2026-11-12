@@ -211,7 +211,7 @@ class Store(Tmp):
     def test_created_private_with_wal(self):
         c = self.db()
         self.assertEqual(c.execute("PRAGMA journal_mode").fetchone()[0], "wal")
-        self.assertEqual(c.execute("SELECT max(version) FROM schema_version").fetchone()[0], 1)
+        self.assertEqual(c.execute("SELECT max(version) FROM schema_version").fetchone()[0], 2)
         c.execute("INSERT INTO professional (pro, name, origin) VALUES ('p-0', 'x', 'folder')")
         for f in glob.glob(os.path.join(self.home, "audit", "audit.db*")):
             self.assertEqual(stat.S_IMODE(os.stat(f).st_mode), 0o600, f)
@@ -231,7 +231,7 @@ class Store(Tmp):
 
     def test_newer_store_refused(self):
         c = self.db()
-        c.execute("INSERT INTO schema_version VALUES (2, 0, 'future')")
+        c.execute("INSERT INTO schema_version VALUES (3, 0, 'future')")
         c.close()
         with self.assertRaises(ST.StoreError):
             ST.open_store(self.home)
@@ -264,15 +264,15 @@ class Migration(Tmp):
             c.execute("ALTER TABLE gap ADD COLUMN extra TEXT")
             raise RuntimeError("boom")
         with self.assertRaises(ST.MigrationError):
-            ST.migrate(self.home, 2, {1: bad})
-        self.assertEqual(self.version(), 1)
+            ST.migrate(self.home, 3, {2: bad})
+        self.assertEqual(self.version(), 2)
         c = ST.open_store(self.home)
         self.assertNotIn("extra", [r[1] for r in c.execute("PRAGMA table_info(gap)")])  # the DDL rolled back with it
         self.assertEqual(c.execute("SELECT count(*) FROM event").fetchone()[0], 5)
         self.assertEqual(c.execute("SELECT outcome FROM audit_log WHERE action='audit_migrate'").fetchall(), [("rolled_back",)])
         c.close()
-        self.assertEqual(ST.migrate(self.home, 2, {1: lambda c: c.execute("ALTER TABLE gap ADD COLUMN extra TEXT")}), 2)
-        self.assertEqual(self.version(), 2)
+        self.assertEqual(ST.migrate(self.home, 3, {2: lambda c: c.execute("ALTER TABLE gap ADD COLUMN extra TEXT")}), 3)
+        self.assertEqual(self.version(), 3)
         for f in glob.glob(os.path.join(self.home, "audit", "audit.db.bak-v*")):
             self.assertEqual(stat.S_IMODE(os.stat(f).st_mode), 0o600)
 
@@ -280,7 +280,7 @@ class Migration(Tmp):
         n = 100000 if BENCH else 20000
         self.v1(n)
         t = time.time()
-        self.assertEqual(ST.migrate(self.home, 2, {1: lambda c: None}), 2)
+        self.assertEqual(ST.migrate(self.home, 3, {2: lambda c: None}), 3)
         self.assertLess(time.time() - t, 5.0)
         with self.assertRaises(ST.StoreError):
             ST.open_store(self.home)  # a v1-only reader never writes a v2 store
@@ -289,12 +289,12 @@ class Migration(Tmp):
         self.v1(50)
         code = ("import sys,os,signal;sys.path.insert(0,%r);from pros_audit import store as S\n"
                 "def step(c):\n c.execute('ALTER TABLE gap ADD COLUMN extra TEXT'); os.kill(os.getpid(), signal.SIGKILL)\n"
-                "S.migrate(%r, 2, {1: step})\n" % (LIB, self.home))
+                "S.migrate(%r, 3, {2: step})\n" % (LIB, self.home))
         r = subprocess.run([sys.executable, "-c", code])
         self.assertEqual(r.returncode, -9)
         c = ST.open_store(self.home)
         self.assertEqual(c.execute("PRAGMA integrity_check").fetchone()[0], "ok")
-        self.assertEqual(c.execute("SELECT max(version) FROM schema_version").fetchone()[0], 1)
+        self.assertEqual(c.execute("SELECT max(version) FROM schema_version").fetchone()[0], 2)
         self.assertEqual(c.execute("SELECT count(*) FROM event").fetchone()[0], 50)
 
 

@@ -8,7 +8,7 @@ import sqlite3
 import stat
 import time
 
-KNOWN_VERSION = 1
+KNOWN_VERSION = 2
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -62,6 +62,7 @@ def open_store(home, create=True, known=None):
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     have = conn.execute("SELECT count(*) FROM sqlite_master WHERE name='schema_version'").fetchone()[0]
+    fresh = not have
     if not have:
         with open(os.path.join(HERE, "store-v1.sql"), encoding="utf-8") as f:
             ddl = f.read()
@@ -77,10 +78,43 @@ def open_store(home, create=True, known=None):
     if ver > known:
         conn.close()
         raise StoreError("the store is version %d, this pros knows %d; update pros (reads only)" % (ver, known))
+    while ver < KNOWN_VERSION and known >= KNOWN_VERSION:  # additive built-in steps run on first open, no backup needed
+        ver = _auto_step(conn, ver)
+    if fresh and ver >= 2:
+        conn.execute("UPDATE store_state SET generation = 0")  # a new store starts at generation 0, whatever steps ran
     return conn
 
 
-MIGRATIONS = {}  # n -> fn(conn): the step from version n to n+1; runs inside one BEGIN IMMEDIATE transaction
+def _sql_statements(name):
+    with open(os.path.join(HERE, name), encoding="utf-8") as f:
+        text = "\n".join(ln for ln in f.read().splitlines() if not ln.lstrip().startswith("--"))
+    return [x.strip() for x in text.split(";\n") if x.strip().rstrip(";")]
+
+
+def _m1_to_2(conn):
+    """v1 -> v2 (additive): event.pro_name, source_meta, header_seen, exchange_conflict, session_residual view (store-v2.sql)."""
+    for st in _sql_statements("store-v2.sql"):
+        conn.execute(st)
+
+
+def _auto_step(conn, cur):
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        now = conn.execute("SELECT max(version) FROM schema_version").fetchone()[0]
+        if now == cur:
+            MIGRATIONS[cur](conn)
+            conn.execute("INSERT INTO schema_version VALUES (?, ?, 'migrate')", (cur + 1, time.time()))
+            conn.execute("UPDATE store_state SET generation = generation + 1")
+            now = cur + 1
+        conn.execute("COMMIT")
+        return now
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+MIGRATIONS = {1: _m1_to_2}  # n -> fn(conn): the step from version n to n+1; runs inside one BEGIN IMMEDIATE transaction
 
 
 class MigrationError(Exception):
