@@ -4,7 +4,7 @@ This repo is a public marketplace of Claude Code plugins plus the `pros` command
 
 ## Layout
 - `plugins/professionals/bin/pros`: the whole command, one Python 3 file, standard library only.
-- `plugins/professionals/lib/pros_audit/`: audit capture and store, standard library only: `emit.py` (spool writer, loaded by `pros` on every event; never raises), `importer.py` + `store.py` (spool to SQLite), `actions.py` (allowlist table, generated from `docs/spec/audit/schemas/event-v1.json`), `store-v1.sql` (copy of the contract DDL). Spec: `docs/spec/audit/`.
+- `plugins/professionals/lib/pros_audit/`: audit capture and store, standard library only: `emit.py` (spool writer, loaded by `pros` on every event; never raises), `importer.py` + `store.py` (spool to SQLite), `actions.py` (allowlist table, generated from `docs/spec/audit/schemas/event-v1.json`), `store-v1.sql` + `store-v2.sql` (copies of the contract DDL), `usage.py` + `derive.py` + `backfill.py` (transcript usage, derived tables, history backfill), `query.py` + `cli.py` + `http.py` (read API, the one `pros audit` parser, loopback adapter), `evaluation.py` + `export.py` (verdicts, redacted export). Spec: `docs/spec/audit/`.
 - `plugins/professionals/skills/professionals/SKILL.md`: the skill every session reads; keep it in step with the command.
 - `plugins/pro-<name>/skills/<name>/SKILL.md`: one professional each, listed in `.claude-plugin/marketplace.json`.
 - `tests/`: unittest suite with a stub `claude` (`tests/fake_claude.py`) and a private tmux socket.

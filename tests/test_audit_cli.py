@@ -103,11 +103,15 @@ class TestCli(unittest.TestCase):
                 self.assertEqual(r.stdout, "")
                 self.assertIn("audit", r.stderr)
 
-    def test_import_without_an_importer_says_so(self):
-        r = self.pros("import")
-        if r.returncode != 0:
-            self.assertEqual(r.returncode, 2)
-            self.assertIn("importer", r.stderr)
+    def test_import_on_a_new_home_creates_the_store(self):
+        # step E: `import` is wired to the D1 importer (+ D2 usage); the store here is a hand fold, so this runs on a new home
+        home = os.path.join(self.tmp, "fresh")
+        r = self.pros("import", "--json", env={"PRO_HOME": home, "CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "no-claude")})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["spool"]["events"], 0)
+        self.assertTrue(os.path.exists(os.path.join(home, "audit", "audit.db")))
+        r = self.pros("import", env={"PRO_HOME": home, "PRO_SESSION": "x"})
+        self.assertEqual(r.returncode, 4)
 
     def test_unknown_subcommand_is_a_usage_error(self):
         self.assertEqual(self.pros("explode").returncode, 2)

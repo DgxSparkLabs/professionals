@@ -45,11 +45,9 @@ class TestGoldens(unittest.TestCase):
         self.check(self.q.list_professionals(), "list_professionals")
 
     def test_list_runs(self):
-        # query.md orders list_runs by started descending; the committed golden lists the same two items ascending (a slip in the committed golden; the test compares the items order-insensitively and checks the descending order separately).
-        def order(e):
-            e["result"]["items"].sort(key=lambda i: i["run"])
-        self.check(self.q.list_runs(), "list_runs", order)
+        # query.md: started descending, then run (the golden follows the doc; it was ascending before step E)
         env = self.q.list_runs()
+        self.check(env, "list_runs")
         self.assertEqual([i["started"] for i in env["result"]["items"]], sorted((i["started"] for i in env["result"]["items"]), reverse=True))
 
     def test_task_trace(self):
