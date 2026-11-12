@@ -22,12 +22,12 @@ Each class has its own limit (days); `0` means keep nothing. A purge deletes row
 
 | Class | Contents | Default | Notes |
 |---|---|---|---|
-| operational | events, derived tables, exchanges, evaluations | 400 days | evaluations are kept as long as the events they judge |
+| operational | events, derived tables, exchanges, evaluations | 90 days (0.3.1; 400 in 0.3.0) | evaluations are kept as long as the events they judge |
 | spool | not yet imported lines | until imported, cap 64 MB | after the cap the emitter drops new events and sets the degraded flag |
 | content | `content` table | 7 days | only exists while content capture is on |
 | reports | saved report definitions and rendered snapshots | until the operator deletes | snapshots hold aggregates, not rows with ids unless filtered by the operator |
 | exports | files written by `pros audit export` | the operator's directory; the store keeps only the `audit_export` record and manifest hash | the store never keeps a copy of an export |
-| audit_log | corrections, deletions, config changes, exports | 400 days | a deletion of audit data is itself recorded |
+| audit_log | corrections, deletions, config changes, exports | 90 days (0.3.1) | a deletion of audit data is itself recorded |
 
 Message files in the runtime state (`run/msgs/*.json`) are outside this class: they hold task bodies, are mode 0600 in 0700 directories since 0.3.0, and still have no retention (pruning them is a runtime follow-up, not part of the audit store).
 

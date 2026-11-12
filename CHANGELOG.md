@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.3.1
+
+- README section "Audit data on your machine": what the default metadata capture records, where it is stored, file modes, retention, and how to turn it off, export and purge.
+- A one-time notice on stderr the first time capture writes in a given `$PRO_HOME` (marker `audit/notice-shown`). It is printed only for the operator's own terminal calls, never inside a professional session or hook, and never on stdout.
+- Default retention for audit events is now 90 days (was 400). Still configurable; nothing is deleted on a timer.
+
 ## 0.3.0
 
 - Audit release (step G): `tests/test_audit_release.py` runs the release acceptance scenario through the real `pros` process (delegation, pending wait, late reply, operator partial verdict entered on the dashboard, resumed transcript, CLI and dashboard JSON byte-equal, 140/80/220/30 tokens, reimport after restart, redacted export without planted strings); `tests/test_audit_release_supplementary.py` adds crash between capture and import, fork duplicates, missing ids, overlapping tasks, denied access, retention, failed migration, disk pressure, and the documented backup and restore. Operations guide: `docs/audit-operations.md` (enable, inspect, disable, back up, restore, purge, same-user limitation).
