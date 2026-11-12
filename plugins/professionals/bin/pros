@@ -138,6 +138,117 @@ def log(event, **kw):
         pass
 
 
+# --------------------------------------------------------------------------- audit capture (docs/spec/audit/events.md)
+
+_AUDIT = {"mod": None, "actor": None, "observer": "pump", "pros": {}}
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def audit_mod():
+    """The emitter module, or False when it cannot be loaded (capture is then silently off)."""
+    if _AUDIT["mod"] is None:
+        try:
+            lib = str(script_root() / "lib")
+            if lib not in sys.path:
+                sys.path.insert(0, lib)
+            from pros_audit import emit as _emit
+            _AUDIT["mod"] = _emit
+        except Exception:  # noqa: BLE001
+            _AUDIT["mod"] = False
+    return _AUDIT["mod"]
+
+
+def audit_emit(action, data, actor=None, **env):
+    """Append one allowlisted event to the spool. Never raises, never blocks (one write, no fsync)."""
+    try:
+        mod = audit_mod()
+        if mod:
+            mod.emit(pro_home(), action, data, actor or _AUDIT["actor"] or ("professional" if is_pro() else "user"), env)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@contextlib.contextmanager
+def audit_as(actor=None, observer=None):
+    old = dict(_AUDIT)
+    if actor:
+        _AUDIT["actor"] = actor
+    if observer:
+        _AUDIT["observer"] = observer
+    try:
+        yield
+    finally:
+        _AUDIT.update(actor=old["actor"], observer=old["observer"])
+
+
+def audit_hash12(x):
+    return hashlib.sha256(str(x).encode("utf-8", "replace")).hexdigest()[:12]
+
+
+def audit_pro(name, entry=None):
+    """Stable professional id p-<12 hex>: the one stored in the registry entry, else derived from origin and name."""
+    try:
+        if not name or name == "user":
+            return None
+        if name in _AUDIT["pros"]:
+            return _AUDIT["pros"][name]
+        e = entry
+        if e is None:
+            reg = reg_read()
+            e = ((reg or {}).get("entries") or {}).get(name) or {}
+        pid = e.get("pro_id") or "p-" + hashlib.sha1(("%s:%s" % ("folder" if e.get("kind") == "folder" else "marketplace", name)).encode()).hexdigest()[:12]
+        _AUDIT["pros"][name] = pid
+        return pid
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def audit_revision(entry):
+    return audit_hash12(entry.get("persona_hash") or entry.get("identity") or entry.get("content_hash") or "")
+
+
+def audit_task(raw):
+    tok, form = audit_mod().task_token(raw) if audit_mod() else (str(raw)[:64], None)
+    return tok, ({"task_form": form} if form else {})
+
+
+def audit_sid(x):
+    return x if isinstance(x, str) and UUID_RE.match(x) else None
+
+
+def audit_msg_created(m, actor=None):
+    try:
+        tok, extra = audit_task(m["task"])
+        role = "user" if m["from"] == "user" else ("system" if m["from"] == "pro" else "professional")
+        d = {"kind": m["kind"], "from_role": role, "to": m["to"], "task": tok, "parent": m.get("parent"), "deadline": m.get("deadline"),
+             "chain_len": len(m.get("chain") or []), "project": audit_hash12(m.get("project", "")), "body_bytes": len((m.get("body") or "").encode("utf-8"))}
+        d.update(extra)
+        if role == "professional":
+            d["from_pro"] = m["from"]
+        if audit_sid(m.get("origin_session")):
+            d["origin_session"] = m["origin_session"]
+        audit_emit("msg_created", d, actor or ("system" if role == "system" else None), msg=m["id"], pro=audit_pro(m["to"]))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def audit_run_of(rec):
+    """(run id, claude session id) of a live session record."""
+    if not rec:
+        return None, None
+    sid = audit_sid(st_get(rec["session"]).get("claude_session_id")) or audit_sid(rec.get("session_id"))
+    return rec.get("run_id"), sid
+
+
+def audit_msg_failed(m, reason):
+    audit_emit("msg_failed", {"reason": reason, "attempts": int(m.get("attempts", 0))}, msg=m["id"], pro=audit_pro(m["to"]))
+
+
+def audit_refused(reason, to, task):
+    tok, extra = audit_task(task or "-")
+    audit_emit("msg_refused", dict({"reason": reason, "to": to, "task": tok}, **extra))
+
+
 def die(msg, code=1, err=""):
     raise Fail(msg, code, err)
 
@@ -374,7 +485,8 @@ def reg_save(reg):
 def market_entry(p, mdir, by="user") -> dict:
     return {"name": p["name"], "kind": "marketplace", "plugin": "%s@%s" % (p["plugin"], load_market(mdir).get("name", "")),
             "enabled": True, "keep": False, "added_at": now(), "added_by": by, "description": sanitize_desc(p["description"]),
-            "persona_hash": sha(p["skill"]), "mode": "", "allow": [], "deny_paths": [], "model": ""}
+            "persona_hash": sha(p["skill"]), "mode": "", "allow": [], "deny_paths": [], "model": "",
+            "pro_id": "p-" + hashlib.sha1(("marketplace:" + p["name"]).encode()).hexdigest()[:12]}
 
 
 def reg_seed(reg):
@@ -694,6 +806,9 @@ def task_counts(name, t0, t1) -> dict:
     return n
 
 
+AUDIT_END = {"reaped": "reaped", "died": "crashed", "lost": "crashed", "failed-to-start": "failed_spawn", "stopped": "stopped", "disabled": "stopped", "stuck": "stopped"}
+
+
 def hist_end(rec, why):
     sid = rec.get("session_id")
     if not sid or not rec.get("entry"):
@@ -705,7 +820,9 @@ def hist_end(rec, why):
     actual = st_get(rec["session"]).get("claude_session_id")
     if actual and actual != sid:
         hist_append(rec["entry"], {"ev": "alias", "id": sid, "actual": actual})  # the hook's id is the truth (R-V2-3)
-    hist_append(rec["entry"], dict({"ev": "end", "id": sid, "reason": reason}, **task_counts(rec["entry"], open_[0]["run_started"], now())))
+    counts = task_counts(rec["entry"], open_[0]["run_started"], now())
+    hist_append(rec["entry"], dict({"ev": "end", "id": sid, "reason": reason}, **counts))
+    audit_emit("session_end", dict({"reason": AUDIT_END.get(reason, "unknown")}, **counts), actor="system", pro=audit_pro(rec["entry"]), run=rec.get("run_id"), session=audit_sid(actual or sid))
 
 
 def hist_reconcile(name, live_ids):
@@ -713,6 +830,9 @@ def hist_reconcile(name, live_ids):
     for x in hist_sessions(name):
         if x["ended"] is None and x["id"] not in live_ids:
             hist_append(name, {"ev": "end", "id": x["id"], "reason": "lost"})
+            run = ([r.get("run") for r in hist_rows(name) if r.get("ev") == "start" and r.get("id") == x["id"] and r.get("run")] or [None])[-1]
+            if run:
+                audit_emit("session_end", {"reason": "crashed", "answered": 0, "failed": 0, "timeout": 0}, actor="system", pro=audit_pro(name), run=run, session=audit_sid(x["id"]))
 
 
 def transcript_for(sid):
@@ -796,7 +916,7 @@ def decide_start(name, workdir, fresh, fork, want):
 
 def pro_home_denies() -> list:
     h = pro_home()
-    return [str(h / x) for x in ("registry.json", "registry.json.bak", "registry.sum", "config.json", "history", "run")]
+    return [str(h / x) for x in ("registry.json", "registry.json.bak", "registry.sum", "config.json", "history", "run", "audit")]
 
 
 def live_for(name) -> list:
@@ -1175,7 +1295,7 @@ def queue_add(s, m):
     (queue_dir(s) / ("%013d-%s" % (int(now() * 1000), m["id"]))).write_text(m["id"])
 
 
-def queue_claim(s):
+def queue_claim(s, via="paste"):
     """Atomically claim the oldest queued message (rename into delivering/)."""
     qd, dd = queue_dir(s), ensure(run_dir("delivering", s))
     if not qd.is_dir():
@@ -1191,6 +1311,7 @@ def queue_claim(s):
             with contextlib.suppress(OSError):
                 os.unlink(dd / f)
             continue
+        audit_emit("msg_claimed", {"via": via, "attempt": int(m.get("inj_n", 0)) + 1}, actor="hook" if via == "stop-hook" else "pump", msg=m["id"], pro=audit_pro(m["to"]))
         return m, dd / f
     return None, None
 
@@ -1211,20 +1332,30 @@ def queue_len(s) -> int:
     return n
 
 
-def mark_injected(m, via):
+def mark_injected(m, via, s=None):
     m = get_msg(m["id"]) or m
     if m["state"] in ("answered", "failed") or (m["state"] == "injected" and m.get("via")):
         return m
     m["state"] = "answered" if m["kind"] in ("reply", "note") else "injected"
     m["injected_at"], m["via"] = now(), via
+    m["inj_n"] = int(m.get("inj_n", 0)) + 1
     save_msg(m)
+    try:
+        rec = get_rec(s or m.get("session") or "")
+        run, sid = audit_run_of(rec)
+        audit_emit("msg_injected", {"via": via if via in ("paste", "stop-hook") else "paste", "attempt": m["inj_n"], "tmux": (rec or {}).get("session") or "pro-unknown",
+                                    "dup": bool(m.get("dup"))}, msg=m["id"], pro=audit_pro(m["to"]), run=run, session=sid)
+    except Exception:  # noqa: BLE001
+        pass
     return m
 
 
 def notify(to, task, text, frm="pro"):
     """System note into somebody's inbox/queue (never raises)."""
     try:
-        post(new_msg(frm, to, task, "note", frm, [to], text, now() + 3600))
+        nm = new_msg(frm, to, task, "note", frm, [to], text, now() + 3600)
+        audit_msg_created(nm, "system")
+        post(nm)
     except Exception as e:  # noqa: BLE001
         log("notify-failed", err=str(e))
 
@@ -1283,6 +1414,7 @@ def deliver_next(rec) -> bool:
             with contextlib.suppress(OSError):
                 os.unlink(dst)
             save_msg(m)
+            audit_msg_failed(m, "paste_failed")
             notify(m["from"], m["task"], "task %s to %s was not delivered (3 failed attempts: %s)" % (m["task"], m["to"], m.get("fail_reason", "no ack")))
         else:
             save_msg(m)
@@ -1305,7 +1437,7 @@ def paste_deliver(rec, m) -> bool:
         pane = capture(s, ansi=True)
         c = classify_pane(pane)
         if c == "working" and now() - t0 > 2:
-            mark_injected(m, "paste")
+            mark_injected(m, "paste", s)
             st_set(s, delivering="")
             return True
         el = now() - t0
@@ -1410,8 +1542,13 @@ def do_send(to, body, task=None, kind="task", reply_to=None):
     if kind not in ("task", "reply", "note"):
         die("kind must be task, reply or note", 2)
     if to != "user":
-        gate(to, "messaged")
+        try:
+            gate(to, "messaged")
+        except Fail:
+            audit_refused("not_allowed", to, task)
+            raise
     if to != "user" and not find_session(to):
+        audit_refused("no_target", to, task)
         die("%s is not running; summon it first: pros summon %s" % (to, to), 5)
     parent = current_task(me, task) if me != "user" else None
     base = (parent["chain"] if parent else [me]) if me != "user" else []
@@ -1432,6 +1569,7 @@ def do_send(to, body, task=None, kind="task", reply_to=None):
     if task and kind == "task":  # T042: the same task id with the same text to the same target is one task, not two
         for old in all_msgs():
             if old["from"] == me and old["to"] == to and old["task"] == task and old["kind"] == "task" and old["body"] == body:
+                audit_refused("duplicate", to, task)
                 return old, "duplicate"
     task = task or ("t-" + uuid.uuid4().hex[:8])
     if sum(1 for m in all_msgs() if m["task"] == task) >= c["task_msg_cap"]:
@@ -1440,6 +1578,7 @@ def do_send(to, body, task=None, kind="task", reply_to=None):
     m["project"] = str(project_root())
     if me == "user" and os.environ.get("CLAUDE_CODE_SESSION_ID"):
         m["origin_session"] = os.environ["CLAUDE_CODE_SESSION_ID"]
+    audit_msg_created(m)
     return m, post(m)
 
 
@@ -1458,6 +1597,11 @@ def read_text_arg(t):
 
 def pump():
     """Opportunistic maintenance: deliver to idle sessions, enforce deadlines, flag dead/dialog sessions."""
+    with audit_as(actor="pump"):
+        return pump_inner()
+
+
+def pump_inner():
     for rec in sessions():
         s = rec["session"]
         try:
@@ -1492,15 +1636,20 @@ def pump():
         if m["kind"] == "task" and m["state"] in ("queued", "injected") and now() > m["deadline"] and not m.get("overdue"):
             rec = find_session(m["to"])
             m["overdue"] = True
-            if m["state"] == "queued":
+            was_queued = m["state"] == "queued"
+            if was_queued:
                 m["state"], m["fail_reason"] = "failed", "deadline passed before delivery"
             save_msg(m)
+            audit_emit("msg_overdue", {"deadline": m["deadline"], "observed_by": _AUDIT["observer"]}, msg=m["id"], pro=audit_pro(m["to"]))
+            if was_queued:
+                audit_msg_failed(m, "deadline_before_delivery")
             why = live_state(rec)[0] if rec else "gone"
             notify(m["from"], m["task"], "timeout: task %s to %s got no answer by its deadline (target state: %s)" % (m["task"], m["to"], why))
     for m in all_msgs():
         if m["kind"] in ("reply", "note") and m["state"] == "queued" and now() > m["deadline"]:
             m["state"], m["fail_reason"] = "failed", "expired unread"
             save_msg(m)
+            audit_msg_failed(m, "expired_unread")
             with contextlib.suppress(OSError):
                 os.unlink(run_dir("inbox", m["id"]))
     stamp = run_dir("reap.stamp")
@@ -1526,11 +1675,13 @@ def stop_session(rec, why="stopped"):
         if m["to"] == rec["name"] and m["state"] == "queued" and m.get("session") in (s, None):
             m["state"], m["fail_reason"] = "failed", "recipient stopped"
             save_msg(m)
+            audit_msg_failed(m, "recipient_stopped")
             notify(m["from"], m["task"], "%s was stopped; task %s was not delivered" % (rec["name"], m["task"]))
     for m in all_msgs():
         if m["to"] == rec["name"] and m["kind"] == "task" and m["state"] == "injected":
             m["state"], m["fail_reason"] = "failed", "recipient %s" % why
             save_msg(m)
+            audit_msg_failed(m, "recipient_stopped")
             notify(m["from"], m["task"], "%s was %s while task %s was still unanswered; no answer will come" % (rec["name"], why, m["task"]))
     with contextlib.suppress(OSError):
         shutil.rmtree(queue_dir(s))
@@ -1559,6 +1710,7 @@ def reap() -> list:
                     continue
                 if live_state(rec)[0] != "idle" or queue_len(s):  # re-check right before the kill
                     continue
+                audit_emit("reap", {"reason": "idle"}, actor="system", pro=audit_pro(rec["name"]), run=rec.get("run_id"), session=audit_run_of(rec)[1])
                 stop_session(rec, "idle-reaped")
                 out.append(rec["name"])
         except Fail:
@@ -1578,6 +1730,7 @@ def cmd_hook(a):
     except ValueError:
         p = {}
     event = a.event.lower().replace("-", "").replace("_", "")
+    _AUDIT["actor"] = "hook"
     try:
         if os.environ.get("PRO_SELF") and os.environ.get("PRO_SESSION"):
             pro_hook(event, raw, p)
@@ -1595,10 +1748,12 @@ def pro_hook(event, raw, p):
         d = st_get(s)
         ev = d.get("last_event") or {}
         if ev.get("key") == key and now() - ev.get("t", 0) < 3:
+            audit_hook_session(s, event, p, True)
             return  # the same hook fired twice (plugin installed and --plugin-dir): idempotent
         d["last_event"], d["updated"] = {"key": key, "t": now()}, now()
         write_json(run_dir("state", s + ".json"), d)
     common = {"last_activity": now()}
+    audit_hook_session(s, event, p, False)
     if p.get("session_id"):
         common["claude_session_id"] = p["session_id"]
     if p.get("transcript_path"):
@@ -1612,7 +1767,7 @@ def pro_hook(event, raw, p):
         for mid in re.findall(r"\[pro-msg id=(m-[0-9a-f]+)", p.get("prompt", "")):
             m = get_msg(mid)
             if m:
-                mark_injected(m, "paste")
+                mark_injected(m, "paste", s)
                 task = m["task"]
         st_set(s, state="busy", blocks=0, task=task, **common)
     elif event == "notification":
@@ -1620,6 +1775,18 @@ def pro_hook(event, raw, p):
             st_set(s, state="dialog", **common)
     elif event == "stop":
         hook_stop(s, p, common)
+
+
+def audit_hook_session(s, event, p, deduped):
+    try:
+        if not audit_sid(p.get("session_id")):
+            return
+        rec = get_rec(s) or {}
+        hook = {"sessionstart": "session-start", "start": "session-start", "stop": "stop", "userpromptsubmit": "prompt", "prompt": "prompt", "sessionend": "session-end", "end": "session-end"}.get(event, "other")
+        audit_emit("hook_session", {"hook": hook, "transcript_ref": audit_hash12(p.get("transcript_path") or ""), "deduped": deduped},
+                   pro=audit_pro(rec.get("name")), run=rec.get("run_id"), session=p["session_id"])
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def auto_reply(s, final):
@@ -1645,10 +1812,12 @@ def auto_reply(s, final):
         m["auto_reply"], m["project"] = True, rec.get("project", "")
         if orig.get("origin_session"):
             m["origin_session"] = orig["origin_session"]
+        audit_msg_created(m)
         status = post(m) if (target == "user" or find_session(target)) else (save_msg(m) or "stored")
         orig = get_msg(orig["id"]) or orig
         orig["state"], orig["answered_at"], orig["answered_by"] = "answered", now(), "auto-reply"
         save_msg(orig)
+        audit_emit("msg_answered", {"answered_by": "auto-reply", "reply_msg": m["id"]}, msg=orig["id"], pro=audit_pro(orig["to"]))
         log("auto-reply", task=orig["task"], to=target, status=status)
     except Exception as e:  # noqa: BLE001
         log("auto-reply-error", err=str(e))
@@ -1666,12 +1835,12 @@ def hook_stop(s, p, common):
                     notify(rec.get("summoner", "user"), "-", "%s hit the delivery cap (%d in a row); %d message(s) wait" % (rec["name"], cap, queue_len(s)))
                 return
             auto_reply(s, p.get("last_assistant_message"))
-            m, dst = queue_claim(s)
+            m, dst = queue_claim(s, "stop-hook")
             if m:
                 if os.environ.get("PRO_TEST_DIE_AFTER_CLAIM"):
                     os.kill(os.getpid(), 9)  # test seam: the hook dies between claim and output
                 print(json.dumps({"decision": "block", "reason": render(m)}), flush=True)
-                mark_injected(m, "stop-hook")  # a kill after the print re-delivers once, marked duplicate
+                mark_injected(m, "stop-hook", s)  # a kill after the print re-delivers once, marked duplicate
                 with contextlib.suppress(OSError):
                     os.unlink(dst)
                 st_set(s, state="busy", blocks=blocks + 1, task=m["task"], **common)
@@ -1702,6 +1871,7 @@ def plain_hook(event, p):
         out.append(render(m, full=True))
         m["state"], m["read_at"] = "answered", now()
         save_msg(m)
+        audit_emit("msg_read", {"reader": "user"}, msg=m["id"])
         with contextlib.suppress(OSError):
             os.unlink(d / mid)
     if out:
@@ -1882,10 +2052,15 @@ def cmd_add(a):
         reg["entries"][name] = {
             "name": name, "kind": "folder", "path": str(path), "identity": folder_identity(path), "content_hash": info["hash"],
             "enabled": True, "keep": False, "added_at": now(), "added_by": "user", "trust_code": bool(a.trust_code),
+            "pro_id": "p-" + hashlib.sha1(("folder:" + name).encode()).hexdigest()[:12],
             "description": sanitize_desc(a.desc) if a.desc else folder_description(path), "mode": a.mode or "",
             "allow": list(a.allow or []), "deny_paths": DEFAULT_FOLDER_DENY + list(a.deny or []), "model": ""}
         return "added", name
     what, name = reg_edit(edit)
+    if what != "same":
+        e2 = ((reg_read() or {}).get("entries") or {}).get(name) or {}
+        audit_emit("registry_change", {"change": "added" if what == "added" else ("trusted" if a.trust_code else "revision_changed"), "origin": "folder", "revision": audit_revision(e2)},
+                   pro=audit_pro(name, e2), pro_name=name)
     if what == "same":
         print("%s is already registered as %s; nothing changed (--refresh re-reads its files)" % (path, name))
         return 0
@@ -1911,12 +2086,17 @@ def cmd_remove(a):
     require_user("remove professionals")
     name = check_name(a.name)
 
+    gone = {}
+
     def edit(reg):
         if name not in reg["entries"]:
             die("%s is not in the list" % name, 1, "not_listed")
         stop_live(name, a.now, "stopped")
+        gone.update(reg["entries"][name])
         del reg["entries"][name]
     reg_edit(edit)
+    audit_emit("registry_change", {"change": "removed", "origin": "folder" if gone.get("kind") == "folder" else "marketplace", "revision": audit_revision(gone)},
+               pro=audit_pro(name, gone), pro_name=name)
     if a.forget:
         with contextlib.suppress(OSError):
             os.unlink(hist_path(name))
@@ -1940,6 +2120,8 @@ def cmd_enable(a):
             if not trusted_market(marketplace_dir()):
                 die("refusing: marketplace %r is not one you added (claude plugin marketplace add ...) nor listed in trusted_marketplaces" % load_market(marketplace_dir()).get("name"), 4)
             reg["entries"][name] = market_entry(market[name], marketplace_dir())
+            audit_emit("registry_change", {"change": "added", "origin": "marketplace", "revision": audit_revision(reg["entries"][name])},
+                       pro=audit_pro(name, reg["entries"][name]), pro_name=name)
             return "enabled (new from the marketplace)"
         st = entry_state(e)
         if st == "missing":
@@ -2131,6 +2313,11 @@ def build_folder_settings(e, fpath, mode, info, sandboxed):
     return settings
 
 
+def audit_rate(live, recent, allowed):
+    c = cfg()
+    audit_emit("rate", {"summons_last_hour": recent, "limit": int(c["summon_budget_per_hour"]), "live": len(live), "live_limit": int(c["max_live"]), "allowed": bool(allowed)})
+
+
 def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, explicit, model, allow_tools, plan, resume_note):
     """Start the tmux session and write the live record + history row.  Caller holds the entry lock."""
     c = cfg()
@@ -2142,12 +2329,14 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
             die("summon chain too deep (%d > max_depth %d)" % (depth, c["max_depth"]), 4, "cap")
     live = [r for r in sessions() if r["session"] != s and is_alive(r)]
     if len(live) >= c["max_live"]:
+        audit_rate(live, 0, False)
         die("live cap reached (%d running, max_live=%d); stop one first: pros stop <name>" % (len(live), c["max_live"]), 4, "cap")
     log_path, recent = run_dir("summons.log"), 0
     if log_path.exists():
         for ln in log_path.read_text().splitlines():
             with contextlib.suppress(ValueError, KeyError):
                 recent += 1 if json.loads(ln)["t"] > now() - 3600 else 0
+    audit_rate(live, recent, recent < c["summon_budget_per_hour"])
     if recent >= c["summon_budget_per_hour"]:
         die("summon budget used up (%d per hour)" % c["summon_budget_per_hour"], 4, "cap")
     sandboxed = c["sandbox"] == "on" or (c["sandbox"] == "auto" and sandbox_available())
@@ -2212,19 +2401,23 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
         die("tmux could not start the session: " + (r.stderr or r.stdout).strip(), 5)
     rec = {"session": s, "name": name, "entry": name, "kind": e["kind"], "scope": scope, "project": str(project), "workdir": str(workdir),
            "summoner": summoner, "depth": depth, "started": now(), "mode": mode, "allow_persona_tools": bool(allow_tools),
-           "sandbox": sandboxed, "dropped_tools": dropped, "owned": owned, "session_id": sid}
+           "sandbox": sandboxed, "dropped_tools": dropped, "owned": owned, "session_id": sid, "run_id": "r-" + uuid.uuid4().hex[:12]}
     if persona:
         rec["persona_hash"] = sha(persona["skill"])
     write_json(run_dir("sessions", s + ".json"), rec)
     write_json(run_dir("state", s + ".json"), {"state": "starting", "last_activity": now(), "blocks": 0})
     with open(log_path, "a") as f:
         f.write(json.dumps({"t": now(), "name": name}) + "\n")
-    row = {"ev": "start", "id": sid, "workdir": str(workdir), "entry": name}
+    row = {"ev": "start", "id": sid, "workdir": str(workdir), "entry": name, "run": rec["run_id"]}
     if plan[0] == "resume":
         row["resumed_from"] = sid
     if plan[0] == "fork":
         row["forked_from"] = plan[1]
     hist_append(name, row)
+    audit_emit("spawn", {"kind": plan[0], "tmux": s if re.match(r"^pro-[a-z0-9-]{1,80}$", s) else "pro-unknown", "revision": audit_revision(e),
+                         "scope": {"global": "user"}.get(scope, scope), "origin": "folder" if folder else "marketplace",
+                         "parent_session": audit_sid(plan[1]) if plan[0] in ("resume", "fork") else None, "live_count": len(live) + 1},
+               actor="system", pro=audit_pro(name, e), pro_name=name, run=rec["run_id"], session=sid)
     return rec, owned, dropped
 
 
@@ -2388,6 +2581,7 @@ def cmd_read(a):
     if m["kind"] in ("reply", "note") and m["state"] != "answered":
         m["state"], m["read_at"] = "answered", now()
         save_msg(m)
+        audit_emit("msg_read", {"reader": self_name()}, msg=m["id"])
         with contextlib.suppress(OSError):
             os.unlink(run_dir("inbox", m["id"]))
     return 0
@@ -2415,6 +2609,7 @@ def cmd_reply(a):
     m["project"] = str(project_root())
     if orig.get("origin_session"):
         m["origin_session"] = orig["origin_session"]
+    audit_msg_created(m)
     if target != "user" and not find_session(target):
         save_msg(m)  # the asker's own wait still finds it; pasting into nobody is pointless
         status = "stored (asker %s is not running)" % target
@@ -2423,6 +2618,7 @@ def cmd_reply(a):
     orig = get_msg(orig["id"]) or orig
     orig["state"], orig["answered_at"] = "answered", now()
     save_msg(orig)
+    audit_emit("msg_answered", {"answered_by": "reply", "reply_msg": m["id"]}, msg=orig["id"], pro=audit_pro(orig["to"]))
     print("replied %s task=%s to=%s status=%s" % (m["id"], a.task, target, status))
     return 0
 
@@ -2437,6 +2633,28 @@ def reply_for(me, task):
 def wait_for(task, timeout, me=None, register=True):
     """Return (code, message-or-None).  0 reply, 3 pending, 5 target unusable."""
     me = me or self_name()
+    wid, t0, asked = "w-" + uuid.uuid4().hex[:8], time.monotonic(), [m for m in all_msgs() if m["from"] == me and m["task"] == task and m["kind"] == "task"]
+    tok, extra = audit_task(task)
+    actor = "user" if me == "user" else "professional"
+    audit_emit("wait_start", dict({"wait": wid, "caller": me, "task": tok, "target_msg": asked[-1]["id"] if asked else None, "timeout_s": min(timeout, cfg()["max_ask_wait_s"])}, **extra), actor=actor)
+    code, r = wait_for_inner(task, timeout, me, register)
+    try:
+        out = "failed"
+        if r:
+            out = "note_only" if r["kind"] == "note" else "reply"
+        elif code == 3:
+            tgt = find_session(asked[-1]["to"]) if asked else None
+            out = "pending_target_stuck" if tgt and live_state(tgt)[0] in ("stuck", "dialog", "limit") else "pending"
+        ret = ("note" if r["kind"] == "note" else "reply") if r else "none"
+        audit_emit("wait_end", {"wait": wid, "outcome": out, "exit": code, "returned": ret, "returned_msg": r["id"] if r else None,
+                                "dur_ms": round((time.monotonic() - t0) * 1000, 1)}, actor=actor)
+    except Exception:  # noqa: BLE001
+        pass
+    return code, r
+
+
+def wait_for_inner(task, timeout, me=None, register=True):
+    me = me or self_name()
     asked = [m for m in all_msgs() if m["from"] == me and m["task"] == task and m["kind"] == "task"]
     target = asked[-1]["to"] if asked else None
     end = now() + min(timeout, cfg()["max_ask_wait_s"])
@@ -2448,12 +2666,13 @@ def wait_for(task, timeout, me=None, register=True):
                 if r["state"] != "answered":
                     r["state"], r["read_at"] = "answered", now()
                     save_msg(r)
+                    audit_emit("msg_read", {"reader": me}, msg=r["id"])
                     with contextlib.suppress(OSError):
                         os.unlink(run_dir("inbox", r["id"]))
                 return (5 if r["from"] == "pro" else 0), r
             if now() - last_pump > 2:
                 last_pump = now()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(Exception), audit_as(observer="wait"):
                     pump()
                 if target:
                     rec = find_session(target)
@@ -2504,8 +2723,13 @@ def cmd_ask(a):
         gate(a.to, "messaged")  # allowlisted professionals only; anything else is refused here
         if not find_session(a.to):
             print("%s is not running; summoning it" % a.to, file=sys.stderr)
-            with contextlib.redirect_stdout(sys.stderr):
-                summon(a.to, None, None, None)
+            try:
+                with contextlib.redirect_stdout(sys.stderr):
+                    summon(a.to, None, None, None)
+            except Fail as e:
+                if e.err == "cap":
+                    audit_refused("cap_live" if "live cap" in str(e) else "cap_hourly", a.to, a.task)
+                raise
     with waiting(me, a.to, "?", now() + wait):  # registered before sending so a crossing ask is refused
         m, status = do_send(a.to, read_text_arg(a.text), a.task, "task")
         print("sent %s task=%s status=%s" % (m["id"], m["task"], status), file=sys.stderr)
