@@ -134,6 +134,9 @@ def build_parser():
             sp.add_argument("--no-usage", action="store_true", help="skip reading transcripts")
             sp.add_argument("--json", action="store_true")
     _add_eval(sub)
+    from . import analysis, reports
+    reports.add_parsers(sub)
+    analysis.add_parsers(sub)
     return p
 
 
@@ -149,6 +152,12 @@ def main(argv, home, require_user, now=None, out=None, err=None):
         return run(argv, home, out, err, None, now() if callable(now) else now)
     if args.sub == "import":
         return run_import(home, args, out)
+    if args.sub in ("report", "compare"):
+        from . import reports
+        return reports.run_cli(args, home, out, err, now() if callable(now) else now)
+    if args.sub == "analyze":
+        from . import analysis
+        return analysis.run_cli(args, home, out, err, now() if callable(now) else now)
     q = Q.Query(store_path(home), owner_check=lambda: require_user("read the audit") or True, now=now)
     if args.sub == "serve":
         from . import http as H
