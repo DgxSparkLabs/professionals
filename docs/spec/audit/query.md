@@ -10,7 +10,7 @@ A Python module `pros_audit.query` (stdlib, loaded only by `pros audit …`) exp
 {"api_version": 1, "method": "...", "snapshot": {...}, "coverage": {...}, "units": {...}, "result": {...}}
 ```
 
-The loopback HTTP adapter maps `GET /api/v1/<method>?<args>` to the same call and returns the same envelope byte for byte (sorted keys). It validates every argument against the tables below, rejects unknown ones (HTTP 400, `error.code=bad_request`) and exposes no write. Access rules are in the Access row below and in [privacy.md](privacy.md) section 5.
+The loopback HTTP adapter maps `GET /api/v1/<method>?<args>` to the same call and returns the same envelope byte for byte (sorted keys). It validates every argument against the tables below and rejects unknown ones (HTTP 400, `error.code=bad_request`). `GET /api/v1/status` returns the `pros audit status --json` envelope. The query API has no write; owner management is a separate opt-in path (`pros audit serve --manage`, [privacy.md](privacy.md) section 5). Access rules are in the Access row below and in [privacy.md](privacy.md) section 5.
 
 Errors use `{"api_version": 1, "error": {"code": "...", "message": "...", "field": "..."}}` with codes `bad_request`, `unauthorized`, `not_found`, `store_unavailable`, `forbidden`, `too_large`. A degraded store still answers; the degraded flag is in `coverage`.
 
@@ -69,6 +69,7 @@ Metrics: `assigned_work`, `evaluation_coverage`, `pass_rate`, `deadline_miss_rat
 | `pros audit explain <metric> [--since …]` | `explain_metric` |
 | `pros audit verdict <target> --status … --criterion C1=failed --rubric … --evidence …` | write (owner only, records `audit_evaluation`) |
 | `pros audit import` | run the importer once |
+| `pros audit serve [--port N] [--rotate] [--manage]` | loopback adapter + dashboard at `/` (token in the URL fragment `#token=`); `--manage` enables owner writes |
 
 `--json` prints the envelope. Without it, text output is rendered from the same envelope and always prints the snapshot id, the coverage cutoff and any degraded note. Later commands (`compare`, `report save`, `export`) extend the same layer.
 

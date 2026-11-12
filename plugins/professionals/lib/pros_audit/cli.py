@@ -128,6 +128,7 @@ def build_parser():
         if name == "serve":
             sp.add_argument("--port", type=int, default=0)
             sp.add_argument("--rotate", action="store_true")
+            sp.add_argument("--manage", action="store_true", help="accept owner management writes from the dashboard (token required; read-only without it)")
         if name == "import":
             sp.add_argument("--backfill", action="store_true", help="also import the surviving history (msgs, sessions) once")
             sp.add_argument("--no-usage", action="store_true", help="skip reading transcripts")
@@ -151,7 +152,7 @@ def main(argv, home, require_user, now=None, out=None, err=None):
     q = Q.Query(store_path(home), owner_check=lambda: require_user("read the audit") or True, now=now)
     if args.sub == "serve":
         from . import http as H
-        return H.serve_cli(q, home, args.port, args.rotate, out)
+        return H.serve_cli(q, home, args.port, args.rotate, out, manage=args.manage, now=now)
     if args.sub == "status":
         env, render = q.status(), render_status
     elif args.sub == "summary":
