@@ -563,9 +563,9 @@ def in_pros_tmux() -> bool:
     return False
 
 
-def require_user(what):
+def require_user(what, why="a professional session cannot change the list of professionals"):
     if is_pro() or os.environ.get("PRO_SESSION") or in_pros_tmux():
-        die("only the user may %s: a professional session cannot change the list of professionals" % what, 4, "user_only")
+        die("only the user may %s: %s" % (what, why), 4, "user_only")
 
 
 def default_name(base):
@@ -3194,6 +3194,15 @@ def cmd_doctor(a):
     return 0 if not bad else 1
 
 
+def cmd_audit(a):
+    """`pros audit status|summary|trace|explain|import|serve`: the local audit, owner only (lib/pros_audit/, docs/spec/audit/)."""
+    sys.path.insert(0, str(Path(os.path.realpath(__file__)).parent.parent / "lib"))
+    from pros_audit import cli
+    check = lambda what: require_user(what, "a professional session cannot read the audit")
+    fixed = os.environ.get("PRO_AUDIT_NOW")  # test hook: a fixed clock, so fixture answers are reproducible
+    return cli.main(a.rest, pro_home(), check, now=(lambda: float(fixed)) if fixed else None)
+
+
 def cmd_version(a):
     print("pros " + VERSION)
     return 0
@@ -3302,6 +3311,8 @@ def build_parser():
     sp = add("doctor", cmd_doctor)
     sp.add_argument("--link", action="store_true")
     sp.add_argument("--repair", action="store_true", help="user only: restore a corrupt registry from its backup, or accept a hand-edited one")
+    sp = add("audit", cmd_audit, help="read the local audit (user only): status, summary, trace, explain")
+    sp.add_argument("rest", nargs=argparse.REMAINDER)
     sp = add("hook", cmd_hook, help=argparse.SUPPRESS)
     sp.add_argument("event")
     add("version", cmd_version)
@@ -3311,7 +3322,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        if args.cmd not in ("hook", "version", "doctor", "pump"):
+        if args.cmd not in ("hook", "version", "doctor", "pump", "audit"):
             auto_pump()
         return args.fn(args) or 0
     except Fail as e:
