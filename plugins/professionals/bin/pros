@@ -1817,7 +1817,8 @@ def cmd_new(a):
         text = re.sub(r"(?m)^tags:.*$", lambda _: "tags: [%s]" % ", ".join(tags), text, count=1)
         text = text.replace("NAME", name)
         meta = read_json(tpl / ".claude-plugin" / "plugin.json", {}) or {}
-        who = git(m, "config", "user.name", check=False).stdout.strip() or "contributor"
+        owner = (read_json(m / ".claude-plugin" / "marketplace.json", {}) or {}).get("owner") or {}
+        who = owner.get("name") or git(m, "config", "user.name", check=False).stdout.strip() or "contributor"  # the marketplace owner, not the committer's account
         meta.update({"name": "pro-" + name, "description": purpose, "author": {"name": who}})
         write_json(pdir / ".claude-plugin" / "plugin.json", meta)
     else:

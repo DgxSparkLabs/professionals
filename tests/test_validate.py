@@ -129,7 +129,23 @@ class Validate(ProTestCase):
         self.assertIn("fix:", r.stdout)
         self.assertEqual(self.ok("version").stdout.strip(), "pros 0.1.0")
         self.ok("doctor", "--link")
-        self.assertTrue(os.path.islink(os.path.join(self.fakehome, ".local", "bin", "pros")))
+        link = os.path.join(self.fakehome, ".local", "bin", "pros")
+        self.assertTrue(os.path.islink(link))
+        self.ok("doctor", "--link")  # relinking our own link is fine
+        self.assertTrue(os.path.islink(link))
+        os.unlink(link)
+        with open(link, "w") as f:
+            f.write("#!/bin/sh\n")
+        r = self.pro("doctor", "--link")
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)  # a regular file is never overwritten
+        self.assertIn("not a link; not touching it", r.stdout + r.stderr)
+        self.assertFalse(os.path.islink(link))
+        os.unlink(link)
+        os.symlink("/usr/bin/true", link)
+        r = self.pro("doctor", "--link")
+        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)  # a link to something else is never overwritten
+        self.assertIn("not to a pros install", r.stdout + r.stderr)
+        self.assertEqual(os.readlink(link), "/usr/bin/true")
 
 
 if __name__ == "__main__":
