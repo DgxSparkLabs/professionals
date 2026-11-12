@@ -199,7 +199,7 @@ class Session:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
     def imports(self):
-        pointer = 1  # starts on "No", like the real dialog
+        pointer = 0  # starts on "No" (first option), like the real dialog
         opts = ["No, disable external imports", "Yes, allow external imports"]  # real Claude Code 2.1.322 order (captured 11-12)
         while True:
             sys.stdout.write("\x1b[2J\x1b[H Allow external CLAUDE.md file imports?\r\n This project's CLAUDE.md imports files outside the working directory.\r\n\r\n")
@@ -213,7 +213,7 @@ class Session:
             elif "\x1b[A" in data:
                 pointer = max(0, pointer - 1)
             elif "\r" in data:
-                if pointer == 0:
+                if pointer == 1:  # "Yes, allow external imports"
                     return
                 sys.exit(1)
 
