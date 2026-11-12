@@ -10,8 +10,8 @@ Collection is local and the default records metadata only. Nothing leaves the ma
 
 | Mode | What is recorded | How it is set |
 |---|---|---|
-| `off` | Nothing is emitted; the emitter returns at once | Default until the release gate passes |
-| `metadata` | Allowlisted events only (ids, enums, counts, times, hashes). No prompts, replies, tool arguments or results, paths, stack text | Operator setting (`audit_config capture_mode`) |
+| `off` | Nothing is emitted; the emitter returns at once | Operator setting: `capture_mode: off` in config.json, `PRO_AUDIT=off`, or the dashboard |
+| `metadata` | Allowlisted events only (ids, enums, counts, times, hashes). No prompts, replies, tool arguments or results, paths, stack text | The default since the release gate (0.3.0); recorded as `audit_config capture_mode` when changed |
 | `content` | Metadata plus the redacted-by-length bodies of messages in a separate `content` table, for one debugging purpose | Separately enabled, time-limited (`content_capture_until`, maximum 7 days, then it falls back to `metadata` by itself), own retention, never exported unless `raw` mode is chosen |
 
 Every mode change is an `audit_config` event. Content capture is not in the first release; the table and switch are reserved so adding it is additive.
@@ -29,7 +29,7 @@ Each class has its own limit (days); `0` means keep nothing. A purge deletes row
 | exports | files written by `pros audit export` | the operator's directory; the store keeps only the `audit_export` record and manifest hash | the store never keeps a copy of an export |
 | audit_log | corrections, deletions, config changes, exports | 400 days | a deletion of audit data is itself recorded |
 
-Message files in the runtime state (`run/msgs/*.json`) are outside this class: they hold task bodies and today have no retention and mode 0644. Tightening them (mode 0600, pruning) is a runtime follow-up (T-X2), not part of the audit store.
+Message files in the runtime state (`run/msgs/*.json`) are outside this class: they hold task bodies, are mode 0600 in 0700 directories since 0.3.0, and still have no retention (pruning them is a runtime follow-up, not part of the audit store).
 
 ## 4. Export
 
@@ -56,4 +56,4 @@ Not used by default. If enabled later (opt-in, local receiver only), ingest keep
 
 ## 7. Rollout
 
-`off` → `metadata` capture only (spool and importer) → CLI (`status`, `summary`, `trace`, `explain`, `verdict`) → dashboard (loopback) → reports and export. Each stage is behind the earlier one passing its tests; disabling returns to `off` without deleting data, and purge is a separate action. Operations (enable, inspect, disable, back up, restore, purge) are written in step G.
+`off` → `metadata` capture only (spool and importer) → CLI (`status`, `summary`, `trace`, `explain`, `verdict`) → dashboard (loopback) → reports and export. Each stage is behind the earlier one passing its tests; disabling returns to `off` without deleting data, and purge is a separate action. Operations (enable, inspect, disable, back up, restore, purge): [../../audit-operations.md](../../audit-operations.md).

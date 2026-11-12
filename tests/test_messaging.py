@@ -20,6 +20,29 @@ class Messaging(ProTestCase):
         self.assertEqual(m["state"], "answered")
         self.assertIn("from=user to=alpha", self.fake_log(self.session())[1] + "from=user to=alpha")
 
+    def test_run_files_are_private(self):
+        """T-X2: message files carry full task bodies: 0600 files in 0700 dirs under run/, also when run/ already existed loose."""
+        import stat
+        os.makedirs(os.path.join(self.home, "run", "msgs"), exist_ok=True)
+        os.chmod(os.path.join(self.home, "run", "msgs"), 0o755)
+        old = os.umask(0o022)
+        try:
+            self.summon("alpha")
+            self.ok("ask", "alpha", "ECHO private", "--wait", "20")
+        finally:
+            os.umask(old)
+        run = os.path.join(self.home, "run")
+        files = [os.path.join(d, f) for d, _, fs in os.walk(run) for f in fs if f.endswith(".json")]
+        msgs = [f for f in files if os.sep + "msgs" + os.sep in f]
+        self.assertTrue(msgs, "messages were written")
+        for f in files:
+            self.assertEqual(stat.S_IMODE(os.stat(f).st_mode), 0o600, f)
+        for d in {os.path.dirname(f) for f in files} | {run}:
+            self.assertEqual(stat.S_IMODE(os.stat(d).st_mode), 0o700, d)
+        log = os.path.join(run, "log", "events.log")
+        if os.path.exists(log):
+            self.assertEqual(stat.S_IMODE(os.stat(log).st_mode), 0o600)
+
     def test_busy_queue_and_stop_hook_delivery(self):
         self.summon("alpha")
         s = self.session()
