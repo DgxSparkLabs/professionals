@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>pros audit</title>
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+<header>
+  <h1>pros audit</h1>
+  <span id="snap" class="muted"></span>
+  <span id="degraded" class="warn" hidden></span>
+</header>
+<form id="filters" autocomplete="off">
+  <label>since <input name="since" value="30d" size="12"></label>
+  <label>until <input name="until" size="12" placeholder="now"></label>
+  <label>professional <input name="professional" size="14"></label>
+  <label>revision <input name="revision" size="12"></label>
+  <label>model <input name="model" size="14"></label>
+  <label>task class <input name="task_class" size="12"></label>
+  <label>direct <select name="direct"><option value="">any</option><option>direct</option><option>delegated</option></select></label>
+  <label>group by <input name="group_by" size="16" placeholder="professional,day"></label>
+  <button type="submit">Apply</button>
+</form>
+<nav id="tabs">
+  <button data-view="overview">Overview</button>
+  <button data-view="professionals">Professionals</button>
+  <button data-view="trace">Trace</button>
+  <button data-view="spend">Spend and context</button>
+  <button data-view="quality">Quality and coverage</button>
+  <button data-view="manage">Manage</button>
+</nav>
+<div id="token-box" hidden>
+  <p>Paste the owner token (from <code>$PRO_HOME/audit/http.token</code>) or open the address <code>/#token=...</code>.</p>
+  <input id="token-input" type="password" size="70" autocomplete="off"> <button id="token-save" type="button">Use token</button>
+</div>
+<main id="view"></main>
+<p id="err" class="err" role="alert"></p>
+<script src="/dashboard.js"></script>
+</body>
+</html>
