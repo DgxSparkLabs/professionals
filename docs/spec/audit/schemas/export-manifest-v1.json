@@ -1,0 +1,475 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "pros-audit-export-manifest-v1",
+ "title": "Export manifest, schema version 1 (docs/spec/audit/privacy.md)",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "manifest_version",
+  "export",
+  "mode",
+  "format",
+  "created_at",
+  "schema_version",
+  "snapshot",
+  "scope",
+  "counts",
+  "redaction",
+  "files"
+ ],
+ "properties": {
+  "manifest_version": {
+   "const": 1
+  },
+  "export": {
+   "$ref": "#/$defs/eid"
+  },
+  "mode": {
+   "enum": [
+    "redacted",
+    "raw"
+   ]
+  },
+  "format": {
+   "enum": [
+    "jsonl",
+    "csv",
+    "html"
+   ]
+  },
+  "created_at": {
+   "$ref": "#/$defs/epoch"
+  },
+  "schema_version": {
+   "type": "integer",
+   "minimum": 1
+  },
+  "snapshot": {
+   "$ref": "#/$defs/snapshot"
+  },
+  "scope": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "from",
+    "to",
+    "professionals",
+    "classes"
+   ],
+   "properties": {
+    "from": {
+     "$ref": "#/$defs/nullable_num"
+    },
+    "to": {
+     "$ref": "#/$defs/nullable_num"
+    },
+    "professionals": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/name"
+     }
+    },
+    "classes": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "operational",
+       "content",
+       "evaluations"
+      ]
+     }
+    }
+   }
+  },
+  "counts": {
+   "type": "object",
+   "additionalProperties": {
+    "$ref": "#/$defs/count"
+   }
+  },
+  "redaction": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "pseudonyms",
+    "dropped_fields",
+    "salt_stored"
+   ],
+   "properties": {
+    "pseudonyms": {
+     "type": "string",
+     "enum": [
+      "per-export-hmac"
+     ]
+    },
+    "dropped_fields": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 32
+     }
+    },
+    "salt_stored": {
+     "const": false
+    }
+   }
+  },
+  "files": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "name",
+     "sha256",
+     "bytes"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 48,
+      "pattern": "^[a-z0-9._-]{1,48}$"
+     },
+     "sha256": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+     },
+     "bytes": {
+      "$ref": "#/$defs/count"
+     }
+    }
+   }
+  },
+  "coverage": {
+   "$ref": "#/$defs/coverage"
+  }
+ },
+ "$defs": {
+  "msg": {
+   "type": "string",
+   "maxLength": 12,
+   "pattern": "^m-[0-9a-f]{10}$"
+  },
+  "pro": {
+   "type": "string",
+   "maxLength": 14,
+   "pattern": "^p-[0-9a-f]{12}$"
+  },
+  "run": {
+   "type": "string",
+   "maxLength": 14,
+   "pattern": "^r-[0-9a-f]{12}$"
+  },
+  "session": {
+   "type": "string",
+   "maxLength": 36,
+   "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+  },
+  "name": {
+   "type": "string",
+   "maxLength": 63,
+   "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+  },
+  "caller": {
+   "type": "string",
+   "maxLength": 63,
+   "pattern": "^(user|[a-z0-9][a-z0-9-]{0,62})$"
+  },
+  "task": {
+   "type": "string",
+   "maxLength": 64,
+   "pattern": "^[A-Za-z0-9._-]{1,64}$"
+  },
+  "tmux": {
+   "type": "string",
+   "maxLength": 84,
+   "pattern": "^pro-[a-z0-9-]{1,80}$"
+  },
+  "hash12": {
+   "type": "string",
+   "maxLength": 12,
+   "pattern": "^[0-9a-f]{12}$"
+  },
+  "wait": {
+   "type": "string",
+   "maxLength": 14,
+   "pattern": "^w-[0-9a-f]{6,12}$"
+  },
+  "evt": {
+   "type": "string",
+   "maxLength": 18,
+   "pattern": "^[0-9a-f]{8}-[0-9]{1,9}$"
+  },
+  "ref": {
+   "type": "string",
+   "maxLength": 82,
+   "pattern": "^[a-z][a-z-]{0,15}:[A-Za-z0-9._-]{1,64}$"
+  },
+  "ident": {
+   "type": "string",
+   "maxLength": 32,
+   "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"
+  },
+  "ver": {
+   "type": "string",
+   "maxLength": 16,
+   "pattern": "^[A-Za-z0-9._-]{1,16}$"
+  },
+  "eid": {
+   "type": "string",
+   "maxLength": 24,
+   "pattern": "^[a-z][a-z0-9-]{0,23}$"
+  },
+  "via": {
+   "enum": [
+    "paste",
+    "stop-hook"
+   ]
+  },
+  "nullable_msg": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/msg"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "nullable_session": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/session"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "nullable_run": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/run"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "nullable_num": {
+   "type": [
+    "number",
+    "null"
+   ]
+  },
+  "count": {
+   "type": "integer",
+   "minimum": 0,
+   "maximum": 1000000000
+  },
+  "epoch": {
+   "type": "number",
+   "minimum": 0
+  },
+  "snapshot": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "id",
+    "schema_version",
+    "last_batch",
+    "max_seq",
+    "taken_at"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "maxLength": 14,
+     "pattern": "^s-[0-9a-f]{12}$"
+    },
+    "schema_version": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "last_batch": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "max_seq": {
+     "$ref": "#/$defs/count"
+    },
+    "taken_at": {
+     "$ref": "#/$defs/epoch"
+    }
+   }
+  },
+  "coverage": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "degraded",
+    "cutoff",
+    "pre_audit_before",
+    "sources",
+    "gaps"
+   ],
+   "properties": {
+    "degraded": {
+     "type": "boolean"
+    },
+    "degraded_cause": {
+     "type": "string",
+     "maxLength": 64
+    },
+    "cutoff": {
+     "$ref": "#/$defs/epoch"
+    },
+    "pre_audit_before": {
+     "$ref": "#/$defs/nullable_num"
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "source",
+       "quality",
+       "from_t",
+       "to_t",
+       "rows"
+      ],
+      "properties": {
+       "source": {
+        "enum": [
+         "emitter",
+         "backfill",
+         "transcript",
+         "session_counter"
+        ]
+       },
+       "quality": {
+        "enum": [
+         "observed",
+         "reconstructed",
+         "partial",
+         "missing"
+        ]
+       },
+       "from_t": {
+        "$ref": "#/$defs/nullable_num"
+       },
+       "to_t": {
+        "$ref": "#/$defs/nullable_num"
+       },
+       "rows": {
+        "$ref": "#/$defs/count"
+       },
+       "versions": {
+        "type": "array",
+        "items": {
+         "type": "string",
+         "maxLength": 16
+        }
+       }
+      }
+     }
+    },
+    "gaps": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "kind",
+       "count"
+      ],
+      "properties": {
+       "kind": {
+        "type": "string",
+        "maxLength": 32
+       },
+       "count": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    }
+   }
+  },
+  "ratio": {
+   "type": "array",
+   "minItems": 2,
+   "maxItems": 2,
+   "items": {
+    "type": "integer",
+    "minimum": 0
+   }
+  },
+  "page": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "limit",
+    "order",
+    "next"
+   ],
+   "properties": {
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 500
+    },
+    "order": {
+     "type": "string",
+     "maxLength": 32
+    },
+    "next": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 128
+    }
+   }
+  },
+  "tokens": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "input",
+    "output",
+    "cache_write",
+    "cache_read",
+    "total"
+   ],
+   "properties": {
+    "input": {
+     "$ref": "#/$defs/count"
+    },
+    "output": {
+     "$ref": "#/$defs/count"
+    },
+    "cache_write": {
+     "$ref": "#/$defs/count"
+    },
+    "cache_read": {
+     "$ref": "#/$defs/count"
+    },
+    "total": {
+     "$ref": "#/$defs/count"
+    }
+   }
+  },
+  "confidence": {
+   "enum": [
+    "verified",
+    "mapped",
+    "unassigned"
+   ]
+  }
+ }
+}

@@ -1,0 +1,194 @@
+[
+ {
+  "event": {
+   "action": "msg_read",
+   "actor": "user",
+   "data": {
+    "body": "secret",
+    "reader": "user"
+   },
+   "id": "a1b2c3d4-114",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "body text in data (allowlist)"
+ },
+ {
+  "event": {
+   "action": "wait_start",
+   "actor": "user",
+   "data": {
+    "caller": "user",
+    "target_msg": null,
+    "task": "dir/secret notes",
+    "timeout_s": 1,
+    "wait": "w-000009"
+   },
+   "id": "a1b2c3d4-115",
+   "origin": "live",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "path in a token field"
+ },
+ {
+  "event": {
+   "action": "msg_injected",
+   "actor": "pump",
+   "data": {
+    "attempt": 1,
+    "dup": false,
+    "tmux": "pro-a--000001",
+    "via": "paste"
+   },
+   "id": "a1b2c3d4-116",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "pro": "p-0000000000a1",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "injected without run/session stamp"
+ },
+ {
+  "event": {
+   "action": "msg_failed",
+   "actor": "pump",
+   "data": {
+    "attempts": 0,
+    "reason": "because I said so"
+   },
+   "id": "a1b2c3d4-117",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "enum outside vocabulary"
+ },
+ {
+  "event": {
+   "action": "msg_created",
+   "actor": "importer",
+   "data": {
+    "body_bytes": 10,
+    "chain_len": 1,
+    "deadline": null,
+    "from_role": "user",
+    "kind": "task",
+    "parent": null,
+    "project": "0a1b2c3d4e5f",
+    "task": "legacy-1",
+    "to": "system-designer"
+   },
+   "id": "a1b2c3d4-113",
+   "msg": "m-0000000007",
+   "origin": "backfill",
+   "pro": "p-0000000000a1",
+   "t": 1800000000.0,
+   "v": 1
+  },
+  "why": "backfill without provenance"
+ },
+ {
+  "event": {
+   "action": "msg_read",
+   "actor": "user",
+   "data": {
+    "reader": "user"
+   },
+   "id": "a1b2c3d4-118",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "t": 1800000001.0,
+   "v": 2
+  },
+  "why": "unknown schema version"
+ },
+ {
+  "event": {
+   "action": "msg_read",
+   "actor": "user",
+   "data": {
+    "reader": "user"
+   },
+   "id": "a1b2c3d4-119",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "prompt": "hello",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "unknown envelope key (prompt)"
+ },
+ {
+  "event": {
+   "action": "audit_evaluation",
+   "actor": "operator",
+   "data": {
+    "criteria": [
+     {
+      "evidence": "the reviewer said it was fine",
+      "id": "C1",
+      "outcome": "passed"
+     }
+    ],
+    "effective_at": 1.0,
+    "eval": "e9",
+    "evaluator": "owner",
+    "evaluator_kind": "operator",
+    "evaluator_version": "1",
+    "rubric": "r",
+    "rubric_version": "1",
+    "status": "passed",
+    "supersedes": null,
+    "target": "m-0000000001",
+    "target_kind": "task"
+   },
+   "id": "a1b2c3d4-120",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "evidence ref carries text"
+ },
+ {
+  "event": {
+   "action": "msg_prompt_text",
+   "actor": "user",
+   "data": {},
+   "id": "a1b2c3d4-121",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "unknown action"
+ },
+ {
+  "event": {
+   "action": "msg_created",
+   "actor": "user",
+   "data": {
+    "body_bytes": 1,
+    "chain_len": 1,
+    "deadline": null,
+    "from_role": "user",
+    "kind": "task",
+    "parent": null,
+    "project": "0a1b2c3d4e5f",
+    "task": "t1",
+    "to": "Alice Smith"
+   },
+   "id": "a1b2c3d4-122",
+   "msg": "m-0000000001",
+   "origin": "live",
+   "t": 1800000001.0,
+   "v": 1
+  },
+  "why": "display name with spaces and capitals"
+ }
+]

@@ -1,0 +1,81 @@
+{
+ "api_version": 1,
+ "coverage": {
+  "cutoff": 1800000200.0,
+  "degraded": false,
+  "gaps": [],
+  "pre_audit_before": null,
+  "sources": [
+   {
+    "from_t": 1800000000.0,
+    "quality": "observed",
+    "rows": 27,
+    "source": "emitter",
+    "to_t": 1800000130.0,
+    "versions": [
+     "0.3.0"
+    ]
+   },
+   {
+    "from_t": 1800000001.0,
+    "quality": "observed",
+    "rows": 7,
+    "source": "transcript",
+    "to_t": 1800000042.0,
+    "versions": [
+     "2.1.322"
+    ]
+   },
+   {
+    "from_t": null,
+    "quality": "missing",
+    "rows": 0,
+    "source": "session_counter",
+    "to_t": null
+   }
+  ]
+ },
+ "method": "list_runs",
+ "result": {
+  "items": [
+   {
+    "assignments": 1,
+    "end_reason": "stopped",
+    "ended": 1800000042.35,
+    "kind": "fresh",
+    "parent_run": null,
+    "pro": "p-0000000000a1",
+    "run": "r-0000000000b1",
+    "session": "00000000-0000-4000-8000-000000000002",
+    "started": 1800000000.08
+   },
+   {
+    "assignments": 1,
+    "end_reason": "stopped",
+    "ended": 1800000042.34,
+    "kind": "fresh",
+    "parent_run": null,
+    "pro": "p-0000000000a2",
+    "run": "r-0000000000b2",
+    "session": "00000000-0000-4000-8000-000000000001",
+    "started": 1800000000.46
+   }
+  ],
+  "page": {
+   "limit": 50,
+   "next": null,
+   "order": "started desc, run"
+  }
+ },
+ "snapshot": {
+  "id": "s-5a1f0c9e2b44",
+  "last_batch": "b1",
+  "max_seq": 27,
+  "schema_version": 1,
+  "taken_at": 1800000200.0
+ },
+ "units": {
+  "count": "count",
+  "time": "epoch_s_utc"
+ }
+}

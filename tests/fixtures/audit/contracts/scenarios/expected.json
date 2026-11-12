@@ -1,0 +1,68 @@
+{
+ "cap_refusal": {
+  "assignments": 0,
+  "failure_reason_counted": "cap_hourly",
+  "refusals": {
+   "cap_hourly": 1
+  }
+ },
+ "dup_redelivery": {
+  "assignments": 1,
+  "attempts": 2,
+  "dup_flags": 1,
+  "note": "dup is evidence, attempts = inject events",
+  "re_executions": 0
+ },
+ "fork_resume_run_ids": {
+  "fork_parent_run": "r-0000000000b1",
+  "runs": 3,
+  "same_session_runs": [
+   "r-0000000000b1",
+   "r-0000000000b3"
+  ],
+  "sessions": 2
+ },
+ "history_rotation": {
+  "coverage_cutoff_is_first_live_event": true,
+  "gap_kinds": [
+   "history_rotation",
+   "pre_audit"
+  ]
+ },
+ "missing_parent": {
+  "assignments": 1,
+  "attached_by_guess": false,
+  "gap_kind": "missing_parent",
+  "orphans": [
+   "m-0000000002"
+  ]
+ },
+ "overlap": {
+  "assignments": 2,
+  "in_flight_overlap": [
+   [
+    "m-0000000001",
+    "m-0000000002"
+   ]
+  ],
+  "overlap_policy": "exchanges while both in flight are unassigned (overlap=1)"
+ },
+ "restart_resend": {
+  "assignments": 1,
+  "attempts": 3,
+  "inject_events": 3,
+  "re_executions": 0
+ },
+ "stale_first_reply": {
+  "belongs_to_assignment": "m-0000000001",
+  "caller_task_reused_for": "m-0000000003",
+  "flag": "stale_reply",
+  "returned_msg": "m-0000000002",
+  "wait_returned": "reply"
+ },
+ "stuck_target_wait": {
+  "delivery_status_unchanged": true,
+  "exit": 3,
+  "wait_outcome": "pending_target_stuck"
+ }
+}

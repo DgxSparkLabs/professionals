@@ -1,0 +1,1462 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "pros-audit-event-v1",
+ "title": "Audit event, schema version 1 (docs/spec/audit/events.md)",
+ "type": "object",
+ "additionalProperties": false,
+ "required": [
+  "v",
+  "id",
+  "t",
+  "action",
+  "actor",
+  "origin",
+  "data"
+ ],
+ "properties": {
+  "v": {
+   "const": 1
+  },
+  "id": {
+   "$ref": "#/$defs/evt"
+  },
+  "t": {
+   "$ref": "#/$defs/epoch"
+  },
+  "action": {
+   "enum": [
+    "msg_created",
+    "msg_claimed",
+    "msg_injected",
+    "msg_answered",
+    "msg_read",
+    "msg_failed",
+    "msg_overdue",
+    "msg_refused",
+    "wait_start",
+    "wait_end",
+    "spawn",
+    "session_end",
+    "hook_session",
+    "rate",
+    "registry_change",
+    "reap",
+    "audit_config",
+    "audit_import",
+    "audit_gap",
+    "audit_evaluation",
+    "audit_export",
+    "audit_purge",
+    "audit_correction",
+    "audit_migrate"
+   ]
+  },
+  "actor": {
+   "enum": [
+    "user",
+    "professional",
+    "system",
+    "hook",
+    "pump",
+    "operator",
+    "importer"
+   ]
+  },
+  "origin": {
+   "enum": [
+    "live",
+    "backfill"
+   ]
+  },
+  "provenance": {
+   "enum": [
+    "msgs",
+    "history",
+    "events_log",
+    "summons_log",
+    "registry",
+    "transcript"
+   ]
+  },
+  "pro": {
+   "$ref": "#/$defs/pro"
+  },
+  "pro_name": {
+   "$ref": "#/$defs/name"
+  },
+  "run": {
+   "$ref": "#/$defs/run"
+  },
+  "session": {
+   "$ref": "#/$defs/nullable_session"
+  },
+  "msg": {
+   "$ref": "#/$defs/msg"
+  },
+  "data": {
+   "type": "object"
+  }
+ },
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_created"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "kind",
+       "from_role",
+       "to",
+       "task",
+       "parent",
+       "deadline",
+       "chain_len",
+       "project",
+       "body_bytes"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "task",
+         "reply",
+         "note"
+        ]
+       },
+       "from_role": {
+        "enum": [
+         "user",
+         "professional",
+         "system"
+        ]
+       },
+       "to": {
+        "$ref": "#/$defs/name"
+       },
+       "task": {
+        "$ref": "#/$defs/task"
+       },
+       "parent": {
+        "$ref": "#/$defs/nullable_msg"
+       },
+       "deadline": {
+        "$ref": "#/$defs/nullable_num"
+       },
+       "chain_len": {
+        "$ref": "#/$defs/count"
+       },
+       "project": {
+        "$ref": "#/$defs/hash12"
+       },
+       "body_bytes": {
+        "$ref": "#/$defs/count"
+       },
+       "from_pro": {
+        "$ref": "#/$defs/name"
+       },
+       "origin_session": {
+        "$ref": "#/$defs/session"
+       }
+      }
+     }
+    },
+    "required": [
+     "msg"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_claimed"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "via",
+       "attempt"
+      ],
+      "properties": {
+       "via": {
+        "$ref": "#/$defs/via"
+       },
+       "attempt": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    },
+    "required": [
+     "msg"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_injected"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "via",
+       "attempt",
+       "tmux",
+       "dup"
+      ],
+      "properties": {
+       "via": {
+        "$ref": "#/$defs/via"
+       },
+       "attempt": {
+        "$ref": "#/$defs/count"
+       },
+       "tmux": {
+        "$ref": "#/$defs/tmux"
+       },
+       "dup": {
+        "type": "boolean"
+       }
+      }
+     }
+    },
+    "required": [
+     "msg",
+     "run",
+     "session",
+     "pro"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_answered"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "answered_by",
+       "reply_msg"
+      ],
+      "properties": {
+       "answered_by": {
+        "enum": [
+         "reply",
+         "auto-reply",
+         "read"
+        ]
+       },
+       "reply_msg": {
+        "$ref": "#/$defs/nullable_msg"
+       }
+      }
+     }
+    },
+    "required": [
+     "msg"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_read"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "reader"
+      ],
+      "properties": {
+       "reader": {
+        "$ref": "#/$defs/caller"
+       }
+      }
+     }
+    },
+    "required": [
+     "msg"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_failed"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "reason",
+       "attempts"
+      ],
+      "properties": {
+       "reason": {
+        "enum": [
+         "deadline_before_delivery",
+         "recipient_stopped",
+         "expired_unread",
+         "paste_failed",
+         "target_stuck",
+         "other"
+        ]
+       },
+       "attempts": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    },
+    "required": [
+     "msg"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_overdue"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "deadline",
+       "observed_by"
+      ],
+      "properties": {
+       "deadline": {
+        "$ref": "#/$defs/epoch"
+       },
+       "observed_by": {
+        "enum": [
+         "pump",
+         "wait",
+         "hook"
+        ]
+       }
+      }
+     }
+    },
+    "required": [
+     "msg"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "msg_refused"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "reason",
+       "to",
+       "task"
+      ],
+      "properties": {
+       "reason": {
+        "enum": [
+         "duplicate",
+         "cap_live",
+         "cap_hourly",
+         "not_allowed",
+         "no_target"
+        ]
+       },
+       "to": {
+        "$ref": "#/$defs/name"
+       },
+       "task": {
+        "$ref": "#/$defs/task"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "wait_start"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "wait",
+       "caller",
+       "task",
+       "target_msg",
+       "timeout_s"
+      ],
+      "properties": {
+       "wait": {
+        "$ref": "#/$defs/wait"
+       },
+       "caller": {
+        "$ref": "#/$defs/caller"
+       },
+       "task": {
+        "$ref": "#/$defs/task"
+       },
+       "target_msg": {
+        "$ref": "#/$defs/nullable_msg"
+       },
+       "timeout_s": {
+        "type": "number",
+        "minimum": 0
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "wait_end"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "wait",
+       "outcome",
+       "exit",
+       "returned",
+       "returned_msg",
+       "dur_ms"
+      ],
+      "properties": {
+       "wait": {
+        "$ref": "#/$defs/wait"
+       },
+       "outcome": {
+        "enum": [
+         "reply",
+         "note_only",
+         "pending",
+         "pending_target_stuck",
+         "failed"
+        ]
+       },
+       "exit": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+       },
+       "returned": {
+        "enum": [
+         "reply",
+         "note",
+         "none"
+        ]
+       },
+       "returned_msg": {
+        "$ref": "#/$defs/nullable_msg"
+       },
+       "dur_ms": {
+        "type": "number",
+        "minimum": 0
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "spawn"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "kind",
+       "tmux",
+       "revision",
+       "scope",
+       "origin",
+       "parent_session",
+       "live_count"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "fresh",
+         "resume",
+         "fork"
+        ]
+       },
+       "tmux": {
+        "$ref": "#/$defs/tmux"
+       },
+       "revision": {
+        "$ref": "#/$defs/hash12"
+       },
+       "scope": {
+        "enum": [
+         "project",
+         "user",
+         "folder"
+        ]
+       },
+       "origin": {
+        "enum": [
+         "marketplace",
+         "folder"
+        ]
+       },
+       "parent_session": {
+        "$ref": "#/$defs/nullable_session"
+       },
+       "live_count": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    },
+    "required": [
+     "run",
+     "session",
+     "pro"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "session_end"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "reason",
+       "answered",
+       "failed",
+       "timeout"
+      ],
+      "properties": {
+       "reason": {
+        "enum": [
+         "stopped",
+         "reaped",
+         "crashed",
+         "failed_spawn",
+         "unknown"
+        ]
+       },
+       "answered": {
+        "$ref": "#/$defs/count"
+       },
+       "failed": {
+        "$ref": "#/$defs/count"
+       },
+       "timeout": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    },
+    "required": [
+     "run",
+     "pro"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "hook_session"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "hook",
+       "transcript_ref",
+       "deduped"
+      ],
+      "properties": {
+       "hook": {
+        "enum": [
+         "session-start",
+         "stop",
+         "prompt",
+         "session-end",
+         "other"
+        ]
+       },
+       "transcript_ref": {
+        "$ref": "#/$defs/hash12"
+       },
+       "deduped": {
+        "type": "boolean"
+       }
+      }
+     }
+    },
+    "required": [
+     "session"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "rate"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "summons_last_hour",
+       "limit",
+       "live",
+       "live_limit",
+       "allowed"
+      ],
+      "properties": {
+       "summons_last_hour": {
+        "$ref": "#/$defs/count"
+       },
+       "limit": {
+        "$ref": "#/$defs/count"
+       },
+       "live": {
+        "$ref": "#/$defs/count"
+       },
+       "live_limit": {
+        "$ref": "#/$defs/count"
+       },
+       "allowed": {
+        "type": "boolean"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "registry_change"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "change",
+       "origin",
+       "revision"
+      ],
+      "properties": {
+       "change": {
+        "enum": [
+         "added",
+         "removed",
+         "renamed",
+         "revision_changed",
+         "trusted",
+         "untrusted"
+        ]
+       },
+       "origin": {
+        "enum": [
+         "marketplace",
+         "folder"
+        ]
+       },
+       "revision": {
+        "$ref": "#/$defs/hash12"
+       },
+       "renamed_from": {
+        "$ref": "#/$defs/name"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "reap"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "reason"
+      ],
+      "properties": {
+       "reason": {
+        "enum": [
+         "idle",
+         "cap",
+         "manual"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_config"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "setting",
+       "value"
+      ],
+      "properties": {
+       "setting": {
+        "enum": [
+         "capture_mode",
+         "retention_metadata_days",
+         "retention_content_days",
+         "retention_reports_days",
+         "retention_exports_days",
+         "content_capture_until",
+         "pricing_table"
+        ]
+       },
+       "value": {
+        "type": "string",
+        "maxLength": 32,
+        "pattern": "^[A-Za-z0-9._:-]{1,32}$"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_import"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "batch",
+       "spool_files",
+       "events",
+       "duplicates",
+       "gaps",
+       "last_seq"
+      ],
+      "properties": {
+       "batch": {
+        "$ref": "#/$defs/eid"
+       },
+       "spool_files": {
+        "$ref": "#/$defs/count"
+       },
+       "events": {
+        "$ref": "#/$defs/count"
+       },
+       "duplicates": {
+        "$ref": "#/$defs/count"
+       },
+       "gaps": {
+        "$ref": "#/$defs/count"
+       },
+       "last_seq": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_gap"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "kind",
+       "source",
+       "from_t",
+       "to_t",
+       "count"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "torn_line",
+         "unparseable",
+         "spool_overflow",
+         "write_error",
+         "missing_parent",
+         "missing_transcript",
+         "history_rotation",
+         "clock_skew",
+         "pre_audit"
+        ]
+       },
+       "source": {
+        "enum": [
+         "spool",
+         "msgs",
+         "history",
+         "events_log",
+         "transcript",
+         "registry"
+        ]
+       },
+       "from_t": {
+        "$ref": "#/$defs/nullable_num"
+       },
+       "to_t": {
+        "$ref": "#/$defs/nullable_num"
+       },
+       "count": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_evaluation"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "eval",
+       "target_kind",
+       "target",
+       "status",
+       "evaluator_kind",
+       "evaluator",
+       "evaluator_version",
+       "rubric",
+       "rubric_version",
+       "effective_at",
+       "supersedes",
+       "criteria"
+      ],
+      "properties": {
+       "eval": {
+        "$ref": "#/$defs/eid"
+       },
+       "target_kind": {
+        "enum": [
+         "task",
+         "assignment"
+        ]
+       },
+       "target": {
+        "$ref": "#/$defs/msg"
+       },
+       "status": {
+        "enum": [
+         "passed",
+         "partial",
+         "failed",
+         "inconclusive",
+         "unreviewed"
+        ]
+       },
+       "evaluator_kind": {
+        "enum": [
+         "operator",
+         "automated"
+        ]
+       },
+       "evaluator": {
+        "$ref": "#/$defs/ident"
+       },
+       "evaluator_version": {
+        "$ref": "#/$defs/ver"
+       },
+       "rubric": {
+        "$ref": "#/$defs/ident"
+       },
+       "rubric_version": {
+        "$ref": "#/$defs/ver"
+       },
+       "effective_at": {
+        "$ref": "#/$defs/epoch"
+       },
+       "supersedes": {
+        "anyOf": [
+         {
+          "$ref": "#/$defs/eid"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "criteria": {
+        "type": "array",
+        "maxItems": 64,
+        "items": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "id",
+          "outcome"
+         ],
+         "properties": {
+          "id": {
+           "$ref": "#/$defs/ident"
+          },
+          "outcome": {
+           "enum": [
+            "passed",
+            "failed",
+            "not_assessed"
+           ]
+          },
+          "evidence": {
+           "$ref": "#/$defs/ref"
+          }
+         }
+        }
+       },
+       "evidence": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+         "$ref": "#/$defs/ref"
+        }
+       }
+      }
+     }
+    },
+    "required": [
+     "msg"
+    ]
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_export"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "export",
+       "mode",
+       "format",
+       "rows",
+       "schema_version",
+       "manifest_sha256"
+      ],
+      "properties": {
+       "export": {
+        "$ref": "#/$defs/eid"
+       },
+       "mode": {
+        "enum": [
+         "redacted",
+         "raw"
+        ]
+       },
+       "format": {
+        "enum": [
+         "jsonl",
+         "csv",
+         "html"
+        ]
+       },
+       "rows": {
+        "$ref": "#/$defs/count"
+       },
+       "schema_version": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "manifest_sha256": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[0-9a-f]{64}$"
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_purge"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "class",
+       "before",
+       "rows",
+       "reason"
+      ],
+      "properties": {
+       "class": {
+        "enum": [
+         "operational",
+         "content",
+         "reports",
+         "exports",
+         "spool"
+        ]
+       },
+       "before": {
+        "$ref": "#/$defs/epoch"
+       },
+       "rows": {
+        "$ref": "#/$defs/count"
+       },
+       "reason": {
+        "enum": [
+         "retention",
+         "operator",
+         "migration"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_correction"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "target_event",
+       "kind",
+       "fields"
+      ],
+      "properties": {
+       "target_event": {
+        "$ref": "#/$defs/evt"
+       },
+       "kind": {
+        "enum": [
+         "correction",
+         "deletion"
+        ]
+       },
+       "fields": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+         "type": "string",
+         "maxLength": 32,
+         "pattern": "^[a-z_]{1,32}$"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "action": {
+      "const": "audit_migrate"
+     }
+    },
+    "required": [
+     "action"
+    ]
+   },
+   "then": {
+    "properties": {
+     "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "from_version",
+       "to_version",
+       "outcome"
+      ],
+      "properties": {
+       "from_version": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "to_version": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "outcome": {
+        "enum": [
+         "ok",
+         "rolled_back"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "if": {
+    "properties": {
+     "origin": {
+      "const": "backfill"
+     }
+    },
+    "required": [
+     "origin"
+    ]
+   },
+   "then": {
+    "required": [
+     "provenance"
+    ]
+   }
+  }
+ ],
+ "$defs": {
+  "msg": {
+   "type": "string",
+   "maxLength": 12,
+   "pattern": "^m-[0-9a-f]{10}$"
+  },
+  "pro": {
+   "type": "string",
+   "maxLength": 14,
+   "pattern": "^p-[0-9a-f]{12}$"
+  },
+  "run": {
+   "type": "string",
+   "maxLength": 14,
+   "pattern": "^r-[0-9a-f]{12}$"
+  },
+  "session": {
+   "type": "string",
+   "maxLength": 36,
+   "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+  },
+  "name": {
+   "type": "string",
+   "maxLength": 63,
+   "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+  },
+  "caller": {
+   "type": "string",
+   "maxLength": 63,
+   "pattern": "^(user|[a-z0-9][a-z0-9-]{0,62})$"
+  },
+  "task": {
+   "type": "string",
+   "maxLength": 64,
+   "pattern": "^[A-Za-z0-9._-]{1,64}$"
+  },
+  "tmux": {
+   "type": "string",
+   "maxLength": 84,
+   "pattern": "^pro-[a-z0-9-]{1,80}$"
+  },
+  "hash12": {
+   "type": "string",
+   "maxLength": 12,
+   "pattern": "^[0-9a-f]{12}$"
+  },
+  "wait": {
+   "type": "string",
+   "maxLength": 14,
+   "pattern": "^w-[0-9a-f]{6,12}$"
+  },
+  "evt": {
+   "type": "string",
+   "maxLength": 18,
+   "pattern": "^[0-9a-f]{8}-[0-9]{1,9}$"
+  },
+  "ref": {
+   "type": "string",
+   "maxLength": 82,
+   "pattern": "^[a-z][a-z-]{0,15}:[A-Za-z0-9._-]{1,64}$"
+  },
+  "ident": {
+   "type": "string",
+   "maxLength": 32,
+   "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"
+  },
+  "ver": {
+   "type": "string",
+   "maxLength": 16,
+   "pattern": "^[A-Za-z0-9._-]{1,16}$"
+  },
+  "eid": {
+   "type": "string",
+   "maxLength": 24,
+   "pattern": "^[a-z][a-z0-9-]{0,23}$"
+  },
+  "via": {
+   "enum": [
+    "paste",
+    "stop-hook"
+   ]
+  },
+  "nullable_msg": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/msg"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "nullable_session": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/session"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "nullable_run": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/run"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "nullable_num": {
+   "type": [
+    "number",
+    "null"
+   ]
+  },
+  "count": {
+   "type": "integer",
+   "minimum": 0,
+   "maximum": 1000000000
+  },
+  "epoch": {
+   "type": "number",
+   "minimum": 0
+  }
+ }
+}
