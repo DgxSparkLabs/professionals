@@ -1,0 +1,326 @@
+{
+ "commands": [
+  {
+   "argv": [
+    "summon",
+    "system-designer"
+   ],
+   "exit": 0,
+   "out": "ready: system-designer session=pro-system-designer--000001 scope=project dir=$PROJECT/.professionals/system-designer reused=no secs=N ignored-tools=Bash(rm -rf /)\nfresh: no earlier session",
+   "t": 1800000000.0
+  },
+  {
+   "argv": [
+    "summon",
+    "reliability-reviewer"
+   ],
+   "exit": 0,
+   "out": "ready: reliability-reviewer session=pro-reliability-reviewer--000001 scope=project dir=$PROJECT/.professionals/reliability-reviewer reused=no secs=N ignored-tools=Bash(rm -rf /)\nfresh: no earlier session",
+   "t": 1800000000.39
+  },
+  {
+   "argv": [
+    "ask",
+    "system-designer",
+    "Review the architecture. CANARY-ROOT-BODY-41\nASK reliability-reviewer ECHO CANARY-CHILD-BODY-42 branch reviewed\nSLEEP 40\nECHO CANARY-ROOT-REPLY-43 review done",
+    "--task",
+    "fx-root",
+    "--wait",
+    "2"
+   ],
+   "exit": 3,
+   "out": "pending: system-designer is busy; message is injected; run: pros wait fx-root\nsent m-0000000001 task=fx-root status=delivered",
+   "t": 1800000000.77
+  },
+  {
+   "argv": [
+    "wait",
+    "fx-root",
+    "--timeout",
+    "60"
+   ],
+   "exit": 5,
+   "out": "[pro-msg id=m-0000000002 from=pro to=user task=fx-root kind=note reply-to=pro chain=user]\ntimeout: task fx-root to system-designer got no answer by its deadline (target state: busy)",
+   "t": 1800000003.46
+  },
+  {
+   "argv": [
+    "wait",
+    "fx-root",
+    "--timeout",
+    "3"
+   ],
+   "exit": 5,
+   "out": "[pro-msg id=m-0000000002 from=pro to=user task=fx-root kind=note reply-to=pro chain=user]\ntimeout: task fx-root to system-designer got no answer by its deadline (target state: busy)",
+   "t": 1800000042.09
+  },
+  {
+   "argv": [
+    "inbox"
+   ],
+   "exit": 0,
+   "out": "inbox for user: 1 unread\nm-0000000003 task=fx-root from=system-designer kind=reply  ask-exit=0 [pro-msg id=m-0000000004 from=reliability-reviewer to=system-designer task=t-00000001 kin\nread one with: pros read <id>",
+   "t": 1800000042.17
+  },
+  {
+   "argv": [
+    "stop",
+    "--all"
+   ],
+   "exit": 0,
+   "out": "stopped: reliability-reviewer, system-designer",
+   "t": 1800000042.25
+  }
+ ],
+ "records": {
+  "config.json": {
+   "ack_timeout_s": 6,
+   "deliver_deadline_s": 36,
+   "ready_timeout_s": 20,
+   "trusted_marketplaces": [
+    "testpros"
+   ]
+  },
+  "history/reliability-reviewer.jsonl": [
+   {
+    "entry": "reliability-reviewer",
+    "ev": "start",
+    "id": "00000000-0000-4000-8000-000000000001",
+    "t": 1800000000.46,
+    "workdir": "$PROJECT/.professionals/reliability-reviewer"
+   },
+   {
+    "answered": 1,
+    "ev": "end",
+    "failed": 0,
+    "id": "00000000-0000-4000-8000-000000000001",
+    "reason": "stopped",
+    "t": 1800000042.34,
+    "timeout": 0
+   }
+  ],
+  "history/system-designer.jsonl": [
+   {
+    "entry": "system-designer",
+    "ev": "start",
+    "id": "00000000-0000-4000-8000-000000000002",
+    "t": 1800000000.08,
+    "workdir": "$PROJECT/.professionals/system-designer"
+   },
+   {
+    "answered": 1,
+    "ev": "end",
+    "failed": 0,
+    "id": "00000000-0000-4000-8000-000000000002",
+    "reason": "stopped",
+    "t": 1800000042.35,
+    "timeout": 0
+   }
+  ],
+  "registry.json": {
+   "entries": {
+    "alpha": {
+     "added_at": 1800000000.07,
+     "added_by": "seed",
+     "allow": [],
+     "deny_paths": [],
+     "description": "A fixture professional used by the tests (alpha) for checking behaviour.",
+     "enabled": true,
+     "keep": false,
+     "kind": "marketplace",
+     "mode": "",
+     "model": "",
+     "name": "alpha",
+     "persona_hash": "6ad320f80fbf4cf5",
+     "plugin": "pro-alpha@testpros"
+    },
+    "reliability-reviewer": {
+     "added_at": 1800000000.07,
+     "added_by": "seed",
+     "allow": [],
+     "deny_paths": [],
+     "description": "A fixture professional used by the tests (reliability-reviewer) for checking behaviour.",
+     "enabled": true,
+     "keep": false,
+     "kind": "marketplace",
+     "mode": "",
+     "model": "",
+     "name": "reliability-reviewer",
+     "persona_hash": "b3a9ad2697b9965e",
+     "plugin": "pro-reliability-reviewer@testpros"
+    },
+    "system-designer": {
+     "added_at": 1800000000.07,
+     "added_by": "seed",
+     "allow": [],
+     "deny_paths": [],
+     "description": "A fixture professional used by the tests (system-designer) for checking behaviour.",
+     "enabled": true,
+     "keep": false,
+     "kind": "marketplace",
+     "mode": "",
+     "model": "",
+     "name": "system-designer",
+     "persona_hash": "bfb1aa0be731951a",
+     "plugin": "pro-system-designer@testpros"
+    }
+   },
+   "seeded": true,
+   "version": 1
+  },
+  "registry.sum": "7951a3796e84b95521870c1838f88251cd2f452821aa7544fdcd6d6f1c4ffd9a",
+  "run/inbox/m-0000000003": "",
+  "run/msgs/m-0000000001.json": {
+   "answered_at": 1800000041.92,
+   "attempts": 0,
+   "body": "Review the architecture. CANARY-ROOT-BODY-41\nASK reliability-reviewer ECHO CANARY-CHILD-BODY-42 branch reviewed\nSLEEP 40\nECHO CANARY-ROOT-REPLY-43 review done",
+   "chain": [
+    "system-designer"
+   ],
+   "created": 1800000000.84,
+   "deadline": 1800000036.84,
+   "from": "user",
+   "id": "m-0000000001",
+   "injected_at": 1800000001.23,
+   "kind": "task",
+   "overdue": true,
+   "parent": null,
+   "project": "$PROJECT",
+   "reply_to": "user",
+   "session": "pro-system-designer--000001",
+   "state": "answered",
+   "task": "fx-root",
+   "to": "system-designer",
+   "via": "paste"
+  },
+  "run/msgs/m-0000000002.json": {
+   "attempts": 0,
+   "body": "timeout: task fx-root to system-designer got no answer by its deadline (target state: busy)",
+   "chain": [
+    "user"
+   ],
+   "created": 1800000038.07,
+   "deadline": 1800003638.07,
+   "from": "pro",
+   "id": "m-0000000002",
+   "kind": "note",
+   "parent": null,
+   "read_at": 1800000038.28,
+   "reply_to": "pro",
+   "session": null,
+   "state": "answered",
+   "task": "fx-root",
+   "to": "user"
+  },
+  "run/msgs/m-0000000003.json": {
+   "attempts": 0,
+   "body": "ask-exit=0 [pro-msg id=m-0000000004 from=reliability-reviewer to=system-designer task=t-00000001 kind=reply reply-to=reliability-reviewer chain=system-designer>reliability-reviewer] CANARY-CHILD-BODY-42 branch r | CANARY-ROOT-REPLY-43 review done",
+   "chain": [
+    "system-designer"
+   ],
+   "created": 1800000041.91,
+   "deadline": 1800003641.91,
+   "from": "system-designer",
+   "id": "m-0000000003",
+   "kind": "reply",
+   "parent": "m-0000000001",
+   "project": "$PROJECT/.professionals/system-designer",
+   "reply_to": "system-designer",
+   "session": null,
+   "state": "queued",
+   "task": "fx-root",
+   "to": "user"
+  },
+  "run/msgs/m-0000000004.json": {
+   "attempts": 0,
+   "body": "CANARY-CHILD-BODY-42 branch reviewed",
+   "chain": [
+    "system-designer",
+    "reliability-reviewer"
+   ],
+   "created": 1800000001.78,
+   "deadline": 1800003601.78,
+   "from": "reliability-reviewer",
+   "id": "m-0000000004",
+   "kind": "reply",
+   "parent": "m-0000000005",
+   "project": "$PROJECT/.professionals/reliability-reviewer",
+   "read_at": 1800000001.83,
+   "reply_to": "reliability-reviewer",
+   "session": "pro-system-designer--000001",
+   "state": "answered",
+   "task": "t-00000001",
+   "to": "system-designer"
+  },
+  "run/msgs/m-0000000005.json": {
+   "answered_at": 1800000001.79,
+   "attempts": 0,
+   "body": "ECHO CANARY-CHILD-BODY-42 branch reviewed",
+   "chain": [
+    "system-designer",
+    "reliability-reviewer"
+   ],
+   "created": 1800000001.32,
+   "deadline": 1800000016.84,
+   "from": "system-designer",
+   "id": "m-0000000005",
+   "injected_at": 1800000001.7,
+   "kind": "task",
+   "parent": "m-0000000001",
+   "project": "$PROJECT/.professionals/system-designer",
+   "reply_to": "system-designer",
+   "session": "pro-reliability-reviewer--000001",
+   "state": "answered",
+   "task": "t-00000001",
+   "to": "reliability-reviewer",
+   "via": "paste"
+  },
+  "run/sandbox_probe.json": {
+   "ok": false,
+   "reason": "host refuses nested user namespaces inside bwrap (unshare: write failed /proc/self/uid_map: Operation not permitted); as root: sysctl kernel.apparmor_restrict_unprivileged_userns=0 or add an AppArmor profile",
+   "t": 1800000000.07
+  },
+  "run/state/pro-reliability-reviewer--000001.json": {
+   "blocks": 0,
+   "claude_session_id": "00000000-0000-4000-8000-000000000001",
+   "delivering": "",
+   "last_activity": 1800000001.87,
+   "last_event": {
+    "key": "a7110db864421e9bd2002e1f3ef57ccdec26fa22",
+    "t": 1800000001.87
+   },
+   "ready": true,
+   "reason": "stopped",
+   "state": "gone",
+   "task": "t-00000001",
+   "transcript_path": "$HOME/.claude/projects/-fake-pro-reliability-reviewer--000001/00000000-0000-4000-8000-000000000001.jsonl",
+   "updated": 1800000042.34
+  },
+  "run/state/pro-system-designer--000001.json": {
+   "blocks": 0,
+   "claude_session_id": "00000000-0000-4000-8000-000000000002",
+   "delivering": "",
+   "last_activity": 1800000042.0,
+   "last_event": {
+    "key": "47fe83ded93ac8d9427b0555c0c599d4d8f5becd",
+    "t": 1800000042.0
+   },
+   "ready": true,
+   "reason": "stopped",
+   "state": "gone",
+   "task": "fx-root",
+   "transcript_path": "$HOME/.claude/projects/-fake-pro-system-designer--000001/00000000-0000-4000-8000-000000000002.jsonl",
+   "updated": 1800000042.35
+  },
+  "run/summons.log": [
+   {
+    "name": "system-designer",
+    "t": 1800000000.08
+   },
+   {
+    "name": "reliability-reviewer",
+    "t": 1800000000.46
+   }
+  ]
+ }
+}

@@ -1,0 +1,375 @@
+{
+ "commands": [
+  {
+   "argv": [
+    "summon",
+    "alpha"
+   ],
+   "exit": 0,
+   "out": "ready: alpha session=pro-alpha--000001 scope=project dir=$PROJECT/.professionals/alpha reused=no secs=N ignored-tools=Bash(rm -rf /)\nfresh: no earlier session",
+   "t": 1800000000.0
+  },
+  {
+   "argv": [
+    "ask",
+    "alpha",
+    "ECHO run 0 CANARY-RESUME-BODY-47",
+    "--task",
+    "fx-run-0",
+    "--wait",
+    "15"
+   ],
+   "exit": 0,
+   "out": "[pro-msg id=m-0000000001 from=alpha to=user task=fx-run-0 kind=reply reply-to=alpha chain=alpha]\nrun 0 CANARY-RESUME-BODY-47\nsent m-0000000002 task=fx-run-0 status=delivered",
+   "t": 1800000000.39
+  },
+  {
+   "argv": [
+    "stop",
+    "alpha"
+   ],
+   "exit": 0,
+   "out": "stopped: alpha",
+   "t": 1800000000.95
+  },
+  {
+   "argv": [
+    "summon",
+    "alpha"
+   ],
+   "exit": 0,
+   "out": "ready: alpha session=pro-alpha--000001 scope=project dir=$PROJECT/.professionals/alpha reused=no secs=N ignored-tools=Bash(rm -rf /)\nresumed=00000000-0000-4000-8000-000000000001",
+   "t": 1800000001.04
+  },
+  {
+   "argv": [
+    "ask",
+    "alpha",
+    "ECHO run 1 CANARY-RESUME-BODY-47",
+    "--task",
+    "fx-run-1",
+    "--wait",
+    "15"
+   ],
+   "exit": 0,
+   "out": "[pro-msg id=m-0000000003 from=alpha to=user task=fx-run-1 kind=reply reply-to=alpha chain=alpha]\nrun 1 CANARY-RESUME-BODY-47\nsent m-0000000004 task=fx-run-1 status=delivered",
+   "t": 1800000001.45
+  },
+  {
+   "argv": [
+    "stop",
+    "alpha"
+   ],
+   "exit": 0,
+   "out": "stopped: alpha",
+   "t": 1800000002.01
+  },
+  {
+   "argv": [
+    "summon",
+    "alpha",
+    "--fork"
+   ],
+   "exit": 0,
+   "out": "ready: alpha session=pro-alpha--000001 scope=project dir=$PROJECT/.professionals/alpha reused=no secs=N ignored-tools=Bash(rm -rf /)\nforked=00000000-0000-4000-8000-000000000002 from=00000000-0000-4000-8000-000000000001 (--fork)",
+   "t": 1800000002.18
+  },
+  {
+   "argv": [
+    "ask",
+    "alpha",
+    "ECHO run 2 CANARY-RESUME-BODY-47",
+    "--task",
+    "fx-run-2",
+    "--wait",
+    "15"
+   ],
+   "exit": 0,
+   "out": "[pro-msg id=m-0000000005 from=alpha to=user task=fx-run-2 kind=reply reply-to=alpha chain=alpha]\nrun 2 CANARY-RESUME-BODY-47\nsent m-0000000006 task=fx-run-2 status=delivered",
+   "t": 1800000002.6
+  },
+  {
+   "argv": [
+    "stop",
+    "alpha"
+   ],
+   "exit": 0,
+   "out": "stopped: alpha",
+   "t": 1800000003.16
+  }
+ ],
+ "records": {
+  "config.json": {
+   "ack_timeout_s": 6,
+   "ready_timeout_s": 20,
+   "trusted_marketplaces": [
+    "testpros"
+   ]
+  },
+  "history/alpha.jsonl": [
+   {
+    "entry": "alpha",
+    "ev": "start",
+    "id": "00000000-0000-4000-8000-000000000001",
+    "t": 1800000000.09,
+    "workdir": "$PROJECT/.professionals/alpha"
+   },
+   {
+    "answered": 1,
+    "ev": "end",
+    "failed": 0,
+    "id": "00000000-0000-4000-8000-000000000001",
+    "reason": "stopped",
+    "t": 1800000001.03,
+    "timeout": 0
+   },
+   {
+    "entry": "alpha",
+    "ev": "start",
+    "id": "00000000-0000-4000-8000-000000000001",
+    "resumed_from": "00000000-0000-4000-8000-000000000001",
+    "t": 1800000001.14,
+    "workdir": "$PROJECT/.professionals/alpha"
+   },
+   {
+    "answered": 2,
+    "ev": "end",
+    "failed": 0,
+    "id": "00000000-0000-4000-8000-000000000001",
+    "reason": "stopped",
+    "t": 1800000002.17,
+    "timeout": 0
+   },
+   {
+    "entry": "alpha",
+    "ev": "start",
+    "forked_from": "00000000-0000-4000-8000-000000000001",
+    "id": "00000000-0000-4000-8000-000000000002",
+    "t": 1800000002.3,
+    "workdir": "$PROJECT/.professionals/alpha"
+   },
+   {
+    "answered": 2,
+    "ev": "end",
+    "failed": 0,
+    "id": "00000000-0000-4000-8000-000000000002",
+    "reason": "stopped",
+    "t": 1800000003.24,
+    "timeout": 0
+   }
+  ],
+  "registry.json": {
+   "entries": {
+    "alpha": {
+     "added_at": 1800000000.07,
+     "added_by": "seed",
+     "allow": [],
+     "deny_paths": [],
+     "description": "A fixture professional used by the tests (alpha) for checking behaviour.",
+     "enabled": true,
+     "keep": false,
+     "kind": "marketplace",
+     "mode": "",
+     "model": "",
+     "name": "alpha",
+     "persona_hash": "6ad320f80fbf4cf5",
+     "plugin": "pro-alpha@testpros"
+    },
+    "reliability-reviewer": {
+     "added_at": 1800000000.07,
+     "added_by": "seed",
+     "allow": [],
+     "deny_paths": [],
+     "description": "A fixture professional used by the tests (reliability-reviewer) for checking behaviour.",
+     "enabled": true,
+     "keep": false,
+     "kind": "marketplace",
+     "mode": "",
+     "model": "",
+     "name": "reliability-reviewer",
+     "persona_hash": "b3a9ad2697b9965e",
+     "plugin": "pro-reliability-reviewer@testpros"
+    },
+    "system-designer": {
+     "added_at": 1800000000.07,
+     "added_by": "seed",
+     "allow": [],
+     "deny_paths": [],
+     "description": "A fixture professional used by the tests (system-designer) for checking behaviour.",
+     "enabled": true,
+     "keep": false,
+     "kind": "marketplace",
+     "mode": "",
+     "model": "",
+     "name": "system-designer",
+     "persona_hash": "bfb1aa0be731951a",
+     "plugin": "pro-system-designer@testpros"
+    }
+   },
+   "seeded": true,
+   "version": 1
+  },
+  "registry.sum": "55e10dfac79433d21016c3b4fda70a0e6564e9484837d915eab5a71a1778d964",
+  "run/msgs/m-0000000001.json": {
+   "attempts": 0,
+   "body": "run 0 CANARY-RESUME-BODY-47",
+   "chain": [
+    "alpha"
+   ],
+   "created": 1800000000.92,
+   "deadline": 1800003600.92,
+   "from": "alpha",
+   "id": "m-0000000001",
+   "kind": "reply",
+   "parent": "m-0000000002",
+   "project": "$PROJECT/.professionals/alpha",
+   "read_at": 1800000000.94,
+   "reply_to": "alpha",
+   "session": null,
+   "state": "answered",
+   "task": "fx-run-0",
+   "to": "user"
+  },
+  "run/msgs/m-0000000002.json": {
+   "answered_at": 1800000000.93,
+   "attempts": 0,
+   "body": "ECHO run 0 CANARY-RESUME-BODY-47",
+   "chain": [
+    "alpha"
+   ],
+   "created": 1800000000.46,
+   "deadline": 1800000600.46,
+   "from": "user",
+   "id": "m-0000000002",
+   "injected_at": 1800000000.85,
+   "kind": "task",
+   "parent": null,
+   "project": "$PROJECT",
+   "reply_to": "user",
+   "session": "pro-alpha--000001",
+   "state": "answered",
+   "task": "fx-run-0",
+   "to": "alpha",
+   "via": "paste"
+  },
+  "run/msgs/m-0000000003.json": {
+   "attempts": 0,
+   "body": "run 1 CANARY-RESUME-BODY-47",
+   "chain": [
+    "alpha"
+   ],
+   "created": 1800000001.99,
+   "deadline": 1800003601.99,
+   "from": "alpha",
+   "id": "m-0000000003",
+   "kind": "reply",
+   "parent": "m-0000000004",
+   "project": "$PROJECT/.professionals/alpha",
+   "read_at": 1800000002.0,
+   "reply_to": "alpha",
+   "session": null,
+   "state": "answered",
+   "task": "fx-run-1",
+   "to": "user"
+  },
+  "run/msgs/m-0000000004.json": {
+   "answered_at": 1800000002.0,
+   "attempts": 0,
+   "body": "ECHO run 1 CANARY-RESUME-BODY-47",
+   "chain": [
+    "alpha"
+   ],
+   "created": 1800000001.53,
+   "deadline": 1800000601.53,
+   "from": "user",
+   "id": "m-0000000004",
+   "injected_at": 1800000001.92,
+   "kind": "task",
+   "parent": null,
+   "project": "$PROJECT",
+   "reply_to": "user",
+   "session": "pro-alpha--000001",
+   "state": "answered",
+   "task": "fx-run-1",
+   "to": "alpha",
+   "via": "paste"
+  },
+  "run/msgs/m-0000000005.json": {
+   "attempts": 0,
+   "body": "run 2 CANARY-RESUME-BODY-47",
+   "chain": [
+    "alpha"
+   ],
+   "created": 1800000003.14,
+   "deadline": 1800003603.14,
+   "from": "alpha",
+   "id": "m-0000000005",
+   "kind": "reply",
+   "parent": "m-0000000006",
+   "project": "$PROJECT/.professionals/alpha",
+   "read_at": 1800000003.16,
+   "reply_to": "alpha",
+   "session": null,
+   "state": "answered",
+   "task": "fx-run-2",
+   "to": "user"
+  },
+  "run/msgs/m-0000000006.json": {
+   "answered_at": 1800000003.15,
+   "attempts": 0,
+   "body": "ECHO run 2 CANARY-RESUME-BODY-47",
+   "chain": [
+    "alpha"
+   ],
+   "created": 1800000002.68,
+   "deadline": 1800000602.68,
+   "from": "user",
+   "id": "m-0000000006",
+   "injected_at": 1800000003.07,
+   "kind": "task",
+   "parent": null,
+   "project": "$PROJECT",
+   "reply_to": "user",
+   "session": "pro-alpha--000001",
+   "state": "answered",
+   "task": "fx-run-2",
+   "to": "alpha",
+   "via": "paste"
+  },
+  "run/sandbox_probe.json": {
+   "ok": false,
+   "reason": "host refuses nested user namespaces inside bwrap (unshare: write failed /proc/self/uid_map: Operation not permitted); as root: sysctl kernel.apparmor_restrict_unprivileged_userns=0 or add an AppArmor profile",
+   "t": 1800000000.07
+  },
+  "run/state/pro-alpha--000001.json": {
+   "blocks": 0,
+   "claude_session_id": "00000000-0000-4000-8000-000000000002",
+   "delivering": "",
+   "last_activity": 1800000003.22,
+   "last_event": {
+    "key": "dbe1c8fa88aca1938c7bcfad6824cb8a003e400e",
+    "t": 1800000003.22
+   },
+   "ready": true,
+   "reason": "stopped",
+   "state": "gone",
+   "task": "fx-run-2",
+   "transcript_path": "$HOME/.claude/projects/-fake-pro-alpha--000001/00000000-0000-4000-8000-000000000002.jsonl",
+   "updated": 1800000003.24
+  },
+  "run/summons.log": [
+   {
+    "name": "alpha",
+    "t": 1800000000.08
+   },
+   {
+    "name": "alpha",
+    "t": 1800000001.14
+   },
+   {
+    "name": "alpha",
+    "t": 1800000002.3
+   }
+  ]
+ }
+}
