@@ -234,7 +234,8 @@
        "waits",
        "usage",
        "evaluation",
-       "gaps"
+       "gaps",
+       "spans"
       ],
       "properties": {
        "root": {
@@ -376,6 +377,11 @@
             "object",
             "null"
            ]
+          },
+          "task_form": {
+           "enum": [
+            "hashed"
+           ]
           }
          }
         }
@@ -480,6 +486,12 @@
         "items": {
          "type": "object"
         }
+       },
+       "spans": {
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/span"
+        }
        }
       }
      }
@@ -548,32 +560,7 @@
         }
        },
        "cards": {
-        "type": "object",
-        "required": [
-         "assigned_work",
-         "evaluation",
-         "deadline_miss",
-         "durations",
-         "accounted_tokens"
-        ],
-        "additionalProperties": false,
-        "properties": {
-         "assigned_work": {
-          "type": "object"
-         },
-         "evaluation": {
-          "type": "object"
-         },
-         "deadline_miss": {
-          "type": "object"
-         },
-         "durations": {
-          "type": "object"
-         },
-         "accounted_tokens": {
-          "type": "object"
-         }
-        }
+        "$ref": "#/$defs/cards"
        },
        "groups": {
         "type": "array"
@@ -619,7 +606,22 @@
          "deadline_miss_rate",
          "queue_time",
          "reply_latency",
-         "accounted_tokens"
+         "accounted_tokens",
+         "sessions_with_work",
+         "active_days",
+         "work_per_active_week",
+         "direct_delegated_mix",
+         "cache_read_share",
+         "cost_estimate",
+         "unpriced_share",
+         "attribution_share",
+         "reply_rate",
+         "execution_time",
+         "failures_by_reason",
+         "concurrent_occupancy",
+         "delivery_retries",
+         "context_footprint",
+         "active_time"
         ]
        },
        "definition": {
@@ -644,7 +646,11 @@
          "assignments",
          "tasks",
          "seconds",
-         "tokens"
+         "tokens",
+         "sessions",
+         "days",
+         "usd_api_equivalent",
+         "count"
         ]
        },
        "exclusions": {
@@ -871,6 +877,8 @@
     "schema_version",
     "last_batch",
     "max_seq",
+    "generation",
+    "pricing",
     "taken_at"
    ],
    "properties": {
@@ -891,6 +899,29 @@
     },
     "max_seq": {
      "$ref": "#/$defs/count"
+    },
+    "generation": {
+     "$ref": "#/$defs/count"
+    },
+    "pricing": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "table_id",
+      "dated"
+     ],
+     "properties": {
+      "table_id": {
+       "type": "string",
+       "maxLength": 32,
+       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"
+      },
+      "dated": {
+       "type": "string",
+       "maxLength": 10,
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      }
+     }
     },
     "taken_at": {
      "$ref": "#/$defs/epoch"
@@ -1034,8 +1065,14 @@
     "input",
     "output",
     "cache_write",
+    "cache_write_5m",
+    "cache_write_1h",
+    "cache_write_unsplit",
     "cache_read",
-    "total"
+    "total",
+    "cost_usd_api_equivalent",
+    "price_state",
+    "unpriced_tokens"
    ],
    "properties": {
     "input": {
@@ -1047,11 +1084,29 @@
     "cache_write": {
      "$ref": "#/$defs/count"
     },
+    "cache_write_5m": {
+     "$ref": "#/$defs/count"
+    },
+    "cache_write_1h": {
+     "$ref": "#/$defs/count"
+    },
+    "cache_write_unsplit": {
+     "$ref": "#/$defs/count"
+    },
     "cache_read": {
      "$ref": "#/$defs/count"
     },
     "total": {
      "$ref": "#/$defs/count"
+    },
+    "unpriced_tokens": {
+     "$ref": "#/$defs/count"
+    },
+    "cost_usd_api_equivalent": {
+     "$ref": "#/$defs/usd"
+    },
+    "price_state": {
+     "$ref": "#/$defs/price_state"
     }
    }
   },
@@ -1061,6 +1116,716 @@
     "mapped",
     "unassigned"
    ]
+  },
+  "price_state": {
+   "enum": [
+    "priced",
+    "unpriced",
+    "partial"
+   ]
+  },
+  "usd": {
+   "type": [
+    "number",
+    "null"
+   ],
+   "minimum": 0
+  },
+  "span_id": {
+   "type": "string",
+   "maxLength": 13,
+   "pattern": "^sp-[0-9a-f]{10}$"
+  },
+  "span": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "span",
+    "kind",
+    "msg",
+    "session",
+    "parent_span",
+    "start",
+    "end",
+    "quality",
+    "links"
+   ],
+   "properties": {
+    "span": {
+     "$ref": "#/$defs/span_id"
+    },
+    "kind": {
+     "enum": [
+      "model_request",
+      "tool",
+      "wait",
+      "delegation"
+     ]
+    },
+    "msg": {
+     "$ref": "#/$defs/nullable_msg"
+    },
+    "session": {
+     "$ref": "#/$defs/nullable_session"
+    },
+    "parent_span": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/span_id"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "start": {
+     "$ref": "#/$defs/epoch"
+    },
+    "end": {
+     "$ref": "#/$defs/nullable_num"
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 40,
+     "pattern": "^[A-Za-z0-9._:-]{1,40}$"
+    },
+    "quality": {
+     "enum": [
+      "derived_wall",
+      "observed"
+     ]
+    },
+    "links": {
+     "type": "array",
+     "maxItems": 16,
+     "items": {
+      "$ref": "#/$defs/span_id"
+     }
+    }
+   }
+  },
+  "conf_split": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "verified",
+    "mapped",
+    "unassigned"
+   ],
+   "properties": {
+    "verified": {
+     "$ref": "#/$defs/count"
+    },
+    "mapped": {
+     "$ref": "#/$defs/count"
+    },
+    "unassigned": {
+     "$ref": "#/$defs/count"
+    }
+   }
+  },
+  "source_quality": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+     "source",
+     "quality"
+    ],
+    "properties": {
+     "source": {
+      "enum": [
+       "emitter",
+       "backfill",
+       "transcript",
+       "session_counter"
+      ]
+     },
+     "quality": {
+      "enum": [
+       "observed",
+       "reconstructed",
+       "partial",
+       "missing"
+      ]
+     }
+    }
+   }
+  },
+  "ratio_or_null": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/ratio"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "cards": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "assigned_work",
+    "evaluation",
+    "deadline_miss",
+    "durations",
+    "accounted_tokens"
+   ],
+   "properties": {
+    "assigned_work": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "coverage",
+      "source_quality",
+      "confidence",
+      "event_time",
+      "cutoff",
+      "assignments",
+      "root_tasks",
+      "child_assignments",
+      "refusals_by_reason"
+     ],
+     "properties": {
+      "coverage": {
+       "$ref": "#/$defs/ratio"
+      },
+      "source_quality": {
+       "$ref": "#/$defs/source_quality"
+      },
+      "confidence": {
+       "$ref": "#/$defs/conf_split"
+      },
+      "event_time": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "cutoff": {
+       "$ref": "#/$defs/epoch"
+      },
+      "assignments": {
+       "$ref": "#/$defs/count"
+      },
+      "root_tasks": {
+       "$ref": "#/$defs/count"
+      },
+      "child_assignments": {
+       "$ref": "#/$defs/count"
+      },
+      "refusals_by_reason": {
+       "type": "object",
+       "additionalProperties": {
+        "$ref": "#/$defs/count"
+       }
+      }
+     }
+    },
+    "evaluation": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "coverage",
+      "source_quality",
+      "confidence",
+      "event_time",
+      "cutoff",
+      "root_tasks",
+      "child_assignments"
+     ],
+     "properties": {
+      "coverage": {
+       "$ref": "#/$defs/ratio"
+      },
+      "source_quality": {
+       "$ref": "#/$defs/source_quality"
+      },
+      "confidence": {
+       "$ref": "#/$defs/conf_split"
+      },
+      "event_time": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "cutoff": {
+       "$ref": "#/$defs/epoch"
+      },
+      "root_tasks": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "unit",
+        "completed_eligible",
+        "conclusive",
+        "counts",
+        "coverage",
+        "pass_rate",
+        "not_completed"
+       ],
+       "properties": {
+        "unit": {
+         "type": "string",
+         "maxLength": 24
+        },
+        "completed_eligible": {
+         "$ref": "#/$defs/count"
+        },
+        "conclusive": {
+         "$ref": "#/$defs/count"
+        },
+        "counts": {
+         "type": "object",
+         "additionalProperties": {
+          "$ref": "#/$defs/count"
+         }
+        },
+        "coverage": {
+         "$ref": "#/$defs/ratio"
+        },
+        "pass_rate": {
+         "$ref": "#/$defs/ratio_or_null"
+        },
+        "not_completed": {
+         "$ref": "#/$defs/count"
+        }
+       }
+      },
+      "child_assignments": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "unit",
+        "completed_eligible",
+        "conclusive",
+        "counts",
+        "coverage",
+        "pass_rate",
+        "not_completed"
+       ],
+       "properties": {
+        "unit": {
+         "type": "string",
+         "maxLength": 24
+        },
+        "completed_eligible": {
+         "$ref": "#/$defs/count"
+        },
+        "conclusive": {
+         "$ref": "#/$defs/count"
+        },
+        "counts": {
+         "type": "object",
+         "additionalProperties": {
+          "$ref": "#/$defs/count"
+         }
+        },
+        "coverage": {
+         "$ref": "#/$defs/ratio"
+        },
+        "pass_rate": {
+         "$ref": "#/$defs/ratio_or_null"
+        },
+        "not_completed": {
+         "$ref": "#/$defs/count"
+        }
+       }
+      }
+     }
+    },
+    "deadline_miss": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "coverage",
+      "source_quality",
+      "confidence",
+      "event_time",
+      "cutoff",
+      "all",
+      "root_tasks",
+      "child_assignments",
+      "rule"
+     ],
+     "properties": {
+      "coverage": {
+       "$ref": "#/$defs/ratio"
+      },
+      "source_quality": {
+       "$ref": "#/$defs/source_quality"
+      },
+      "confidence": {
+       "$ref": "#/$defs/conf_split"
+      },
+      "event_time": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "cutoff": {
+       "$ref": "#/$defs/epoch"
+      },
+      "all": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "eligible_elapsed",
+        "missed",
+        "late_answers_among_missed",
+        "not_yet_due",
+        "cancelled",
+        "rate"
+       ],
+       "properties": {
+        "eligible_elapsed": {
+         "$ref": "#/$defs/count"
+        },
+        "missed": {
+         "$ref": "#/$defs/count"
+        },
+        "late_answers_among_missed": {
+         "$ref": "#/$defs/count"
+        },
+        "not_yet_due": {
+         "$ref": "#/$defs/count"
+        },
+        "cancelled": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "minimum": 0
+        },
+        "rate": {
+         "$ref": "#/$defs/ratio_or_null"
+        }
+       }
+      },
+      "root_tasks": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "eligible_elapsed",
+        "missed",
+        "late_answers_among_missed",
+        "not_yet_due",
+        "cancelled",
+        "rate"
+       ],
+       "properties": {
+        "eligible_elapsed": {
+         "$ref": "#/$defs/count"
+        },
+        "missed": {
+         "$ref": "#/$defs/count"
+        },
+        "late_answers_among_missed": {
+         "$ref": "#/$defs/count"
+        },
+        "not_yet_due": {
+         "$ref": "#/$defs/count"
+        },
+        "cancelled": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "minimum": 0
+        },
+        "rate": {
+         "$ref": "#/$defs/ratio_or_null"
+        }
+       }
+      },
+      "child_assignments": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "eligible_elapsed",
+        "missed",
+        "late_answers_among_missed",
+        "not_yet_due",
+        "cancelled",
+        "rate"
+       ],
+       "properties": {
+        "eligible_elapsed": {
+         "$ref": "#/$defs/count"
+        },
+        "missed": {
+         "$ref": "#/$defs/count"
+        },
+        "late_answers_among_missed": {
+         "$ref": "#/$defs/count"
+        },
+        "not_yet_due": {
+         "$ref": "#/$defs/count"
+        },
+        "cancelled": {
+         "type": [
+          "integer",
+          "null"
+         ],
+         "minimum": 0
+        },
+        "rate": {
+         "$ref": "#/$defs/ratio_or_null"
+        }
+       }
+      },
+      "rule": {
+       "type": "string",
+       "maxLength": 120
+      }
+     }
+    },
+    "durations": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "coverage",
+      "source_quality",
+      "confidence",
+      "event_time",
+      "cutoff",
+      "queue",
+      "reply_latency_from_first_delivery",
+      "active_model_tool_time",
+      "percentile"
+     ],
+     "properties": {
+      "coverage": {
+       "$ref": "#/$defs/ratio"
+      },
+      "source_quality": {
+       "$ref": "#/$defs/source_quality"
+      },
+      "confidence": {
+       "$ref": "#/$defs/conf_split"
+      },
+      "event_time": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "cutoff": {
+       "$ref": "#/$defs/epoch"
+      },
+      "queue": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "n",
+        "eligible",
+        "coverage",
+        "p50_s",
+        "p95_s"
+       ],
+       "properties": {
+        "n": {
+         "$ref": "#/$defs/count"
+        },
+        "eligible": {
+         "$ref": "#/$defs/count"
+        },
+        "coverage": {
+         "$ref": "#/$defs/ratio"
+        },
+        "p50_s": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "p95_s": {
+         "type": [
+          "number",
+          "null"
+         ]
+        }
+       }
+      },
+      "reply_latency_from_first_delivery": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "n",
+        "eligible",
+        "coverage",
+        "p50_s",
+        "p95_s"
+       ],
+       "properties": {
+        "n": {
+         "$ref": "#/$defs/count"
+        },
+        "eligible": {
+         "$ref": "#/$defs/count"
+        },
+        "coverage": {
+         "$ref": "#/$defs/ratio"
+        },
+        "p50_s": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "p95_s": {
+         "type": [
+          "number",
+          "null"
+         ]
+        }
+       }
+      },
+      "active_model_tool_time": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "n",
+        "eligible",
+        "coverage",
+        "p50_s",
+        "p95_s"
+       ],
+       "properties": {
+        "n": {
+         "$ref": "#/$defs/count"
+        },
+        "eligible": {
+         "$ref": "#/$defs/count"
+        },
+        "coverage": {
+         "$ref": "#/$defs/ratio"
+        },
+        "p50_s": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "p95_s": {
+         "type": [
+          "number",
+          "null"
+         ]
+        }
+       }
+      },
+      "percentile": {
+       "type": "string",
+       "maxLength": 24
+      }
+     }
+    },
+    "accounted_tokens": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "coverage",
+      "source_quality",
+      "confidence",
+      "event_time",
+      "cutoff",
+      "exchanges",
+      "total_unique",
+      "linked_task",
+      "session_only",
+      "unavailable",
+      "root_inclusive",
+      "by_category",
+      "cache_write_split",
+      "cost_usd_api_equivalent",
+      "price_state",
+      "unpriced_tokens",
+      "unpriced_share"
+     ],
+     "properties": {
+      "coverage": {
+       "$ref": "#/$defs/ratio"
+      },
+      "source_quality": {
+       "$ref": "#/$defs/source_quality"
+      },
+      "confidence": {
+       "$ref": "#/$defs/conf_split"
+      },
+      "event_time": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "cutoff": {
+       "$ref": "#/$defs/epoch"
+      },
+      "exchanges": {
+       "$ref": "#/$defs/count"
+      },
+      "total_unique": {
+       "$ref": "#/$defs/count"
+      },
+      "linked_task": {
+       "$ref": "#/$defs/count"
+      },
+      "session_only": {
+       "$ref": "#/$defs/count"
+      },
+      "unavailable": {
+       "type": [
+        "integer",
+        "null"
+       ],
+       "minimum": 0
+      },
+      "unavailable_note": {
+       "type": "string",
+       "maxLength": 64
+      },
+      "root_inclusive": {
+       "type": "object",
+       "additionalProperties": {
+        "$ref": "#/$defs/count"
+       }
+      },
+      "by_category": {
+       "type": "object",
+       "additionalProperties": {
+        "$ref": "#/$defs/count"
+       }
+      },
+      "cache_write_split": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "5m",
+        "1h",
+        "unsplit"
+       ],
+       "properties": {
+        "5m": {
+         "$ref": "#/$defs/count"
+        },
+        "1h": {
+         "$ref": "#/$defs/count"
+        },
+        "unsplit": {
+         "$ref": "#/$defs/count"
+        }
+       }
+      },
+      "cost_usd_api_equivalent": {
+       "$ref": "#/$defs/usd"
+      },
+      "price_state": {
+       "$ref": "#/$defs/price_state"
+      },
+      "unpriced_tokens": {
+       "$ref": "#/$defs/count"
+      },
+      "unpriced_share": {
+       "$ref": "#/$defs/ratio"
+      }
+     }
+    }
+   }
   }
  }
 }

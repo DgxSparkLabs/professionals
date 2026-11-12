@@ -166,6 +166,9 @@
        },
        "origin_session": {
         "$ref": "#/$defs/session"
+       },
+       "task_form": {
+        "$ref": "#/$defs/task_form"
        }
       }
      }
@@ -443,6 +446,9 @@
        },
        "task": {
         "$ref": "#/$defs/task"
+       },
+       "task_form": {
+        "$ref": "#/$defs/task_form"
        }
       }
      }
@@ -488,6 +494,9 @@
        "timeout_s": {
         "type": "number",
         "minimum": 0
+       },
+       "task_form": {
+        "$ref": "#/$defs/task_form"
        }
       }
      }
@@ -927,6 +936,12 @@
        },
        "last_seq": {
         "$ref": "#/$defs/count"
+       },
+       "conflicts": {
+        "$ref": "#/$defs/count"
+       },
+       "purged_skipped": {
+        "$ref": "#/$defs/count"
        }
       }
      }
@@ -967,7 +982,9 @@
          "missing_transcript",
          "history_rotation",
          "clock_skew",
-         "pre_audit"
+         "pre_audit",
+         "id_conflict",
+         "purged_skipped"
         ]
        },
        "source": {
@@ -1384,8 +1401,8 @@
   },
   "evt": {
    "type": "string",
-   "maxLength": 18,
-   "pattern": "^[0-9a-f]{8}-[0-9]{1,9}$"
+   "maxLength": 26,
+   "pattern": "^[0-9a-f]{16}-[0-9]{1,9}$"
   },
   "ref": {
    "type": "string",
@@ -1457,6 +1474,11 @@
   "epoch": {
    "type": "number",
    "minimum": 0
+  },
+  "task_form": {
+   "enum": [
+    "hashed"
+   ]
   }
  }
 }

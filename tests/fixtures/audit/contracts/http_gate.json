@@ -1,0 +1,106 @@
+{
+ "cases": [
+  {
+   "code": null,
+   "headers": {
+    "Authorization": "Bearer tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "Host": "LOOPBACK:8765"
+   },
+   "method": "GET",
+   "status": 200,
+   "why": "valid"
+  },
+  {
+   "code": null,
+   "headers": {
+    "Authorization": "Bearer tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "Host": "localhost:8765"
+   },
+   "method": "GET",
+   "status": 200,
+   "why": "localhost name ok"
+  },
+  {
+   "code": "unauthorized",
+   "headers": {
+    "Host": "LOOPBACK:8765"
+   },
+   "method": "GET",
+   "status": 401,
+   "why": "no token"
+  },
+  {
+   "code": "unauthorized",
+   "headers": {
+    "Authorization": "Bearer nope",
+    "Host": "LOOPBACK:8765"
+   },
+   "method": "GET",
+   "status": 401,
+   "why": "wrong token"
+  },
+  {
+   "code": "bad_request",
+   "headers": {
+    "Authorization": "Bearer tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "Host": "evil.example:8765"
+   },
+   "method": "GET",
+   "status": 400,
+   "why": "dns rebinding host"
+  },
+  {
+   "code": "bad_request",
+   "headers": {
+    "Authorization": "Bearer tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "Host": "LOOPBACK"
+   },
+   "method": "GET",
+   "status": 400,
+   "why": "host without port"
+  },
+  {
+   "code": "forbidden",
+   "headers": {
+    "Authorization": "Bearer tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "Host": "LOOPBACK:8765",
+    "Origin": "http://evil.example"
+   },
+   "method": "GET",
+   "status": 403,
+   "why": "foreign origin"
+  },
+  {
+   "code": null,
+   "headers": {
+    "Authorization": "Bearer tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "Host": "LOOPBACK:8765",
+    "Origin": "http://LOOPBACK:8765"
+   },
+   "method": "GET",
+   "status": 200,
+   "why": "same origin ok"
+  },
+  {
+   "code": "bad_request",
+   "headers": {
+    "Authorization": "Bearer tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt",
+    "Host": "LOOPBACK:8765"
+   },
+   "method": "POST",
+   "status": 405,
+   "why": "write method"
+  },
+  {
+   "code": "bad_request",
+   "headers": {
+    "Host": "evil.example:8765"
+   },
+   "method": "GET",
+   "status": 400,
+   "why": "bad host wins over missing token"
+  }
+ ],
+ "port": 8765,
+ "token": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+}

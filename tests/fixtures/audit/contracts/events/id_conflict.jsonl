@@ -1,0 +1,3 @@
+{"action": "msg_read", "actor": "user", "data": {"reader": "user"}, "id": "deadbeefdeadbeef-1", "msg": "m-0000000001", "origin": "live", "pro": "p-0000000000a1", "t": 1800000400.0, "v": 1}
+{"action": "msg_read", "actor": "user", "data": {"reader": "system-designer"}, "id": "deadbeefdeadbeef-1", "msg": "m-0000000002", "origin": "live", "pro": "p-0000000000a1", "t": 1800000401.0, "v": 1}
+{"action": "msg_read", "actor": "user", "data": {"reader": "user"}, "id": "deadbeefdeadbeef-1", "msg": "m-0000000001", "origin": "live", "pro": "p-0000000000a1", "t": 1800000400.0, "v": 1}
