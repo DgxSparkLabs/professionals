@@ -1,0 +1,9 @@
+{
+ "rubric": "reliability-check",
+ "version": "r1",
+ "target_kind": "assignment",
+ "criteria": [
+  {"id": "T1", "text": "Automated check exits 0 on the reviewed branch", "kind": "required"}
+ ],
+ "outcome_rule": "passed if T1 passed; failed if T1 failed; inconclusive otherwise"
+}

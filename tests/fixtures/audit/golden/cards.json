@@ -1,0 +1,141 @@
+{
+ "accounted_tokens": {
+  "by_category": {
+   "cache_creation_input_tokens": 20,
+   "cache_read_input_tokens": 30,
+   "input_tokens": 120,
+   "output_tokens": 80
+  },
+  "exchanges": 4,
+  "linked_task": 220,
+  "root_inclusive": {
+   "m-0000000001": 220
+  },
+  "session_only": 30,
+  "total_unique": 250,
+  "unavailable": null,
+  "unavailable_note": "no session counter in source"
+ },
+ "assigned_work": {
+  "assignments": 2,
+  "child_assignments": 1,
+  "root_tasks": 1
+ },
+ "deadline_miss": {
+  "all": {
+   "cancelled": 0,
+   "eligible_elapsed": 2,
+   "late_answers_among_missed": 1,
+   "missed": 1,
+   "not_yet_due": 0,
+   "rate": [
+    1,
+    2
+   ]
+  },
+  "child_assignments": {
+   "cancelled": 0,
+   "eligible_elapsed": 1,
+   "late_answers_among_missed": 0,
+   "missed": 0,
+   "not_yet_due": 0,
+   "rate": [
+    0,
+    1
+   ]
+  },
+  "root_tasks": {
+   "cancelled": 0,
+   "eligible_elapsed": 1,
+   "late_answers_among_missed": 1,
+   "missed": 1,
+   "not_yet_due": 0,
+   "rate": [
+    1,
+    1
+   ]
+  },
+  "rule": "deadline vs answered_at; the overdue flag is evidence only"
+ },
+ "durations": {
+  "active_model_tool_time": {
+   "coverage": [
+    0,
+    2
+   ],
+   "eligible": 2,
+   "n": 0,
+   "p50_s": null,
+   "p95_s": null
+  },
+  "percentile": "nearest rank",
+  "queue": {
+   "coverage": [
+    2,
+    2
+   ],
+   "eligible": 2,
+   "n": 2,
+   "p50_s": 0.38,
+   "p95_s": 0.39
+  },
+  "reply_latency_from_first_delivery": {
+   "coverage": [
+    2,
+    2
+   ],
+   "eligible": 2,
+   "n": 2,
+   "p50_s": 0.09,
+   "p95_s": 40.69
+  }
+ },
+ "evaluation": {
+  "child_assignments": {
+   "completed_eligible": 1,
+   "conclusive": 1,
+   "counts": {
+    "failed": 0,
+    "inconclusive": 0,
+    "partial": 0,
+    "passed": 1,
+    "unreviewed": 0
+   },
+   "coverage": [
+    1,
+    1
+   ],
+   "pass_rate": [
+    1,
+    1
+   ],
+   "unit": "child assignment"
+  },
+  "root_tasks": {
+   "completed_eligible": 1,
+   "conclusive": 1,
+   "counts": {
+    "failed": 0,
+    "inconclusive": 0,
+    "partial": 1,
+    "passed": 0,
+    "unreviewed": 0
+   },
+   "coverage": [
+    1,
+    1
+   ],
+   "pass_rate": [
+    0,
+    1
+   ],
+   "unit": "root task"
+  }
+ },
+ "window": {
+  "cutoff": 1800000100.0,
+  "event_time": "assignment created",
+  "from": 1800000000.0,
+  "to": 1800000100.0
+ }
+}
