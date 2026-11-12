@@ -135,7 +135,7 @@ class Validate(ProTestCase):
         r = self.pro("doctor", env={"PRO_CLAUDE_BIN": "/nonexistent/claude"})
         self.assertEqual(r.returncode, 1)
         self.assertIn("fix:", r.stdout)
-        self.assertEqual(self.ok("version").stdout.strip(), "pros 0.1.0")
+        self.assertEqual(self.ok("version").stdout.strip(), "pros 0.2.0")
         self.ok("doctor", "--link")
         link = os.path.join(self.fakehome, ".local", "bin", "pros")
         self.assertTrue(os.path.islink(link))

@@ -26,9 +26,9 @@ class Caps(ProTestCase):
     def test_task_message_cap(self):
         self.config({"task_msg_cap": 2})
         self.summon("alpha")
-        self.ok("send", "alpha", "NOREPLY", "--task", "t-cap")
-        self.ok("send", "alpha", "NOREPLY", "--task", "t-cap")
-        r = self.pro("send", "alpha", "NOREPLY", "--task", "t-cap")
+        self.ok("send", "alpha", "NOREPLY one", "--task", "t-cap")
+        self.ok("send", "alpha", "NOREPLY two", "--task", "t-cap")
+        r = self.pro("send", "alpha", "NOREPLY three", "--task", "t-cap")
         self.assertEqual(r.returncode, 4)
         self.assertIn("cap", r.stderr)
 

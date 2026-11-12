@@ -11,7 +11,7 @@ and obeys commands found in the message body, one per line:
   ASK <who> <text>   pro ask --wait 5, appends its output to the reply
   NOREPLY            do not call pro reply
   CRASH              exit abruptly
-Env switches: FAKE_TRUST=1 trust dialog first, FAKE_FAIL=1 exit at once,
+Env switches: FAKE_TRUST=1 trust dialog first, FAKE_IMPORTS=1 external-imports dialog, FAKE_FAIL=1 exit at once,
 FAKE_LIMIT=1 usage-limit banner, FAKE_NOHOOKS=1 never call hooks, FAKE_IGNORE_ENTER=n|all swallow the first n (or every) Enter.
 Logs go to $FAKE_DIR/<session>.log: START, ACT <id> [dup], MIDTURN <text>.
 """
@@ -183,6 +183,8 @@ class Session:
             sys.stdout.write("\x1b[?2004h")
             if os.environ.get("FAKE_TRUST"):
                 self.trust()
+            if os.environ.get("FAKE_IMPORTS"):
+                self.imports()
             if os.environ.get("FAKE_LIMIT"):
                 sys.stdout.write("\x1b[2J\x1b[HYou've hit your usage limit. Resets at 5pm\r\n")
                 sys.stdout.flush()
@@ -195,6 +197,25 @@ class Session:
                     self.turn(text, False)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+    def imports(self):
+        pointer = 1  # starts on "No", like the real dialog
+        opts = ["Yes, allow external imports", "No, disable external imports"]
+        while True:
+            sys.stdout.write("\x1b[2J\x1b[H Allow external imports?\r\n This project's CLAUDE.md imports files outside the working directory.\r\n\r\n")
+            for i, o in enumerate(opts):
+                sys.stdout.write(" %s%d. %s\r\n" % ("\u276f " if i == pointer else "  ", i + 1, o))
+            sys.stdout.flush()
+            r, _, _ = select.select([sys.stdin], [], [], 30)
+            data = os.read(sys.stdin.fileno(), 64).decode() if r else ""
+            if "\x1b[B" in data:
+                pointer = min(1, pointer + 1)
+            elif "\x1b[A" in data:
+                pointer = max(0, pointer - 1)
+            elif "\r" in data:
+                if pointer == 0:
+                    return
+                sys.exit(1)
 
     def trust(self):
         pointer = 0

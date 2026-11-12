@@ -46,7 +46,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -811,6 +811,8 @@ def classify_pane(raw: str) -> str:
         return "gone"
     if "Yes, I trust this folder" in plain:
         return "trust"
+    if IMPORTS_RE.search(plain) and "Yes" in plain:
+        return "imports"
     if LIMIT_RE.search(tail):
         return "limit"
     if "Do you want to proceed" in tail or ("Esc to cancel" in tail and re.search(r"^\s*\u276f\s*1\.", tail, re.M)):
@@ -823,6 +825,24 @@ def classify_pane(raw: str) -> str:
     if st == "draft":
         return "draft"
     return "unknown"
+
+
+IMPORTS_RE = re.compile(r"allow external (?:CLAUDE\.md )?(?:file )?imports", re.I)
+
+
+def imports_keys(plain: str):
+    """Keys that choose the 'Yes, allow external imports' option, wherever the pointer is (options: lines starting Yes/No)."""
+    opts, ptr, yes = [], 0, 0
+    for ln in plain.splitlines():
+        t = ln.replace("\u276f", "").strip()
+        t = re.sub(r"^\d+[.)]\s*", "", t)
+        if re.match(r"(Yes|No)\b", t):
+            if "\u276f" in ln:
+                ptr = len(opts)
+            if t.startswith("Yes"):
+                yes = len(opts)
+            opts.append(t)
+    return ["Down" if yes > ptr else "Up"] * abs(yes - ptr) + ["Enter"]
 
 
 def trust_keys(plain: str):
@@ -940,6 +960,8 @@ def live_state(rec, pane=None) -> tuple:
         return "gone", "claude exited"
     if c == "trust":
         return "dialog", "folder trust dialog"
+    if c == "imports":
+        return "dialog", "external imports dialog"
     if c == "permission":
         return "dialog", "permission dialog"
     if c == "limit":
@@ -1334,6 +1356,10 @@ def do_send(to, body, task=None, kind="task", reply_to=None):
             deadline = min(deadline, parent["deadline"] - 20)
             if deadline < now() + 10:
                 die("no time left in the parent task's deadline", 4)
+    if task and kind == "task":  # T042: the same task id with the same text to the same target is one task, not two
+        for old in all_msgs():
+            if old["from"] == me and old["to"] == to and old["task"] == task and old["kind"] == "task" and old["body"] == body:
+                return old, "duplicate"
     task = task or ("t-" + uuid.uuid4().hex[:8])
     if sum(1 for m in all_msgs() if m["task"] == task) >= c["task_msg_cap"]:
         die("task %s hit the message cap (%d)" % (task, c["task_msg_cap"]), 4)
@@ -2199,7 +2225,7 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
                 note = "This session was resumed. Earlier tasks in this context are closed; answer only tasks delivered after this line."
             with lock("summon-global", 30):  # count + budget + start are one step, across all names
                 rec, owned, dropped = spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, bool(explicit_mode), model, allow_tools, plan, note)
-            ready, wwhy = wait_ready(rec, owned, c["ready_timeout_s"])
+            ready, wwhy = wait_ready(rec, owned, c["ready_timeout_s"], folder)
             if ready:
                 break
             pane = ANSI_ANY.sub("", capture(s))
@@ -2221,7 +2247,7 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
     return 0
 
 
-def wait_ready(rec, owned, timeout):
+def wait_ready(rec, owned, timeout, folder=False):
     s, end, last_trust, last = rec["session"], now() + timeout, 0.0, ""
     while now() < end:
         raw = capture(s, ansi=True)
@@ -2235,6 +2261,14 @@ def wait_ready(rec, owned, timeout):
                 return False, "folder-trust dialog in a folder pros may not answer for (not registered, changed, or it has hooks/MCP and was added without --trust-code); run `pros attach %s` and answer it yourself" % rec["name"]
             if now() - last_trust > 2.5:
                 send_keys(s, *trust_keys(ANSI_ANY.sub("", raw)))
+                last_trust = now()
+            time.sleep(0.4)
+            continue
+        if c == "imports":
+            if not (owned and folder):
+                return False, "external-imports dialog in a folder pros may not answer for (not registered, changed, or hooks/MCP without --trust-code); run `pros attach %s` and answer it yourself" % rec["name"]
+            if now() - last_trust > 2.5:
+                send_keys(s, *imports_keys(ANSI_ANY.sub("", raw)))
                 last_trust = now()
             time.sleep(0.4)
             continue
@@ -2390,8 +2424,15 @@ def cmd_ask(a):
         print("note: --wait clamped to %ds (the Bash tool kills longer commands); use pros wait to continue" % cap, file=sys.stderr)
         wait = cap
     me = self_name()
+    if a.to not in ("user", me):
+        check_name(a.to, "recipient")
+        gate(a.to, "messaged")  # allowlisted professionals only; anything else is refused here
+        if not find_session(a.to):
+            print("%s is not running; summoning it" % a.to, file=sys.stderr)
+            with contextlib.redirect_stdout(sys.stderr):
+                summon(a.to, None, None, None)
     with waiting(me, a.to, "?", now() + wait):  # registered before sending so a crossing ask is refused
-        m, status = do_send(a.to, read_text_arg(a.text), None, "task")
+        m, status = do_send(a.to, read_text_arg(a.text), a.task, "task")
         print("sent %s task=%s status=%s" % (m["id"], m["task"], status), file=sys.stderr)
         code, r = wait_for(m["task"], wait, register=False)
     return finish_wait(code, r, m["task"])
@@ -2934,6 +2975,7 @@ def build_parser():
     sp = add("ask", cmd_ask)
     sp.add_argument("to")
     sp.add_argument("text")
+    sp.add_argument("--task", help="your own task id; asking again with the same id and text returns the stored answer")
     sp.add_argument("--wait", type=float, default=90)
     sp.add_argument("--json", action="store_true")
     sp = add("wait", cmd_wait)

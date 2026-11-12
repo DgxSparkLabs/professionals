@@ -31,7 +31,7 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros read <id>` | Read a message that arrived as a pointer |
 | `pros inbox` | Replies waiting for you (for sessions that are not professionals) |
 | `pros reply <task> <text>` or `pros reply <task> - <<'EOF'` | Answer a task by its id. Use the quoted heredoc form for any text with backticks, quotes, `$` or newlines: Claude Code denies those inline |
-| `pros ask <to> <text> [--wait 90]` | Send a task and wait up to 90 s for the answer |
+| `pros ask <to> <text> [--wait 90] [--task ID]` | Send a task and wait up to 90 s for the answer; starts an allowlisted professional that is not running; the same `--task` id and text again returns the stored answer |
 | `pros wait <task> [--timeout 90]` | Keep waiting for an earlier ask; can be repeated |
 | `pros stop <name>` or `pros stop --all` | Stop one professional or all of them |
 | `pros reap` | Stop idle professionals past the idle limit |
