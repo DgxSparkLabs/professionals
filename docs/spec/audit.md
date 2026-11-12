@@ -35,6 +35,14 @@ Facts proved by the fixtures (`tests/fixtures/audit/`, test `tests/test_audit_fi
 - The caller's short wait returns pending (exit 3); after the deadline, `pros wait` returns the timeout note (exit 5) even after the late reply arrived.
 - A resume keeps the session id (`resumed_from` equals `id`); a fork gets a new id with `forked_from`.
 
+Known runtime gaps the audit must record truthfully (fixture cases for step C; fixes are separate):
+
+- The message store is never pruned (`all_msgs` 1120 reads every file).
+- A restart re-sends unanswered tasks with no counter (`resend_unanswered` 2359-2365): each re-send is a duplicate attempt of one assignment.
+- A stuck but alive target does not end a wait early: the waiter gets exit 3, not 5.
+- `pros wait` returns the first reply or note ever stored for a task id: stale replies for a reused id, and a deadline note that shadows a later real reply.
+- Cap refusals (6 live sessions, 20 summons per hour, depth 4) exit 4; they count as failures by reason.
+
 ## 3. Design
 
 ### 3.1 Capture path
@@ -115,7 +123,7 @@ Sibling steps run in parallel; a step waits for all its inputs.
 | F3 | benchmarks and analysis | rubric classes, benchmark datasets, optional statsmodels workflows |
 | G | release | release acceptance fixture passes; permissions, export redaction, migration, recovery tested; operations documented (enable, inspect, disable, back up, restore, purge); version and changelog |
 
-Follow-up found in step A (separate fix, not part of the audit): `pros wait` should return the real reply when one exists, not the first matching note.
+Follow-ups found in step A (separate fixes, not part of the audit): the runtime gaps listed at the end of section 2.
 
 ## 5. Release acceptance fixture
 
