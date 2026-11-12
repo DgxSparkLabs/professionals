@@ -69,6 +69,11 @@ Full recorded run: [tests/fixtures/real-run-1.md](tests/fixtures/real-run-1.md).
 | `professional-smith` | Creates, trains, validates and publishes new professionals | `pro-professional-smith` |
 | `ship-gatekeeper` | Checks a change against the repo's own rules before merge: SHIP or DON'T SHIP with the exact missing items (created by `professional-smith`) | `pro-ship-gatekeeper` |
 | `systemd-hardening-auditor` | Audits a systemd service and proposes a hardened drop-in with the risk of each line (created by `professional-smith`) | `pro-systemd-hardening-auditor` |
+| `whatsapp-engineer` | WhatsApp Cloud API vs linked-device clients, sessions, webhooks, ban risk | `pro-whatsapp-engineer` |
+| `telegram-engineer` | Telegram bots vs user clients, flood limits, sessions, calls | `pro-telegram-engineer` |
+| `linkedin-messaging-engineer` | LinkedIn messaging and invites with quotas, pacing and throttle stops | `pro-linkedin-messaging-engineer` |
+| `instagram-messaging-engineer` | Instagram DM via the Meta messaging API, review, window, webhooks | `pro-instagram-messaging-engineer` |
+| `facebook-messenger-engineer` | Messenger Platform for pages: webhooks, window and tags, handover | `pro-facebook-messenger-engineer` |
 
 Each one is also a plain skill, so you can install a single persona on its own: `claude plugin install pro-linux-ops@professionals`.
 

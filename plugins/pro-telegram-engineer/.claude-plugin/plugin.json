@@ -1,0 +1,10 @@
+{
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "description": "Builds and debugs Telegram integrations: Bot API bots (buttons, webhooks, file limits), MTProto user clients (Telethon, Pyrogram, py-tgcalls), flood limits, sessions, and the web client. Summon to choose bot versus user account or fix a Telegram automation.",
+  "license": "MIT",
+  "name": "pro-telegram-engineer",
+  "repository": "https://github.com/DgxSparkLabs/professionals",
+  "version": "0.1.0"
+}

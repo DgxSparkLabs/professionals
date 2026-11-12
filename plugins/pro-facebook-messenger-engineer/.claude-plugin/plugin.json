@@ -1,0 +1,10 @@
+{
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "description": "Plans Facebook Messenger integrations: the Messenger Platform for pages (Meta app, page token, webhooks, review, messaging window and tags), and why automating a personal account is unsupported. Summon before building a Messenger bot or inbox tool.",
+  "license": "MIT",
+  "name": "pro-facebook-messenger-engineer",
+  "repository": "https://github.com/DgxSparkLabs/professionals",
+  "version": "0.1.0"
+}

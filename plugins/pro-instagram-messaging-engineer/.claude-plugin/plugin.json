@@ -1,0 +1,10 @@
+{
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "description": "Plans Instagram direct-message integrations: the Messaging API for professional accounts via the Meta app and a linked page, review and permissions, the messaging window, webhooks, and why unofficial private-API clients risk bans. Summon before automating Instagram DMs.",
+  "license": "MIT",
+  "name": "pro-instagram-messaging-engineer",
+  "repository": "https://github.com/DgxSparkLabs/professionals",
+  "version": "0.1.0"
+}

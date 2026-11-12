@@ -1,0 +1,10 @@
+{
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "description": "Plans and operates LinkedIn messaging and outreach safely: no public messaging API for individuals, browser-automation risks, invite and InMail quotas, pacing, soft throttling. Summon before automating LinkedIn messages, invites or inbox reading.",
+  "license": "MIT",
+  "name": "pro-linkedin-messaging-engineer",
+  "repository": "https://github.com/DgxSparkLabs/professionals",
+  "version": "0.1.0"
+}

@@ -1,0 +1,10 @@
+{
+  "author": {
+    "name": "DgxSparkLabs"
+  },
+  "description": "Builds and debugs WhatsApp messaging integrations: the official Business Cloud API versus unofficial linked-device and web clients, QR pairing, sessions, webhooks, media, and ban risk. Summon to choose a route, design a bot or bridge, or fix a broken session.",
+  "license": "MIT",
+  "name": "pro-whatsapp-engineer",
+  "repository": "https://github.com/DgxSparkLabs/professionals",
+  "version": "0.1.0"
+}

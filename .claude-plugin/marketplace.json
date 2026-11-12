@@ -143,6 +143,71 @@
     "ci"
    ],
    "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Builds and debugs WhatsApp messaging integrations: the official Business Cloud API versus unofficial linked-device and web clients, QR pairing, sessions, webhooks, media, and ban risk. Summon to choose a route, design a bot or bridge, or fix a broken session.",
+   "name": "pro-whatsapp-engineer",
+   "source": "./plugins/pro-whatsapp-engineer",
+   "tags": [
+    "whatsapp",
+    "messaging",
+    "automation",
+    "webhooks"
+   ],
+   "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Builds and debugs Telegram integrations: Bot API bots (buttons, webhooks, file limits), MTProto user clients (Telethon, Pyrogram, py-tgcalls), flood limits, sessions, and the web client. Summon to choose bot versus user account or fix a Telegram automation.",
+   "name": "pro-telegram-engineer",
+   "source": "./plugins/pro-telegram-engineer",
+   "tags": [
+    "telegram",
+    "messaging",
+    "bots",
+    "mtproto"
+   ],
+   "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Plans and operates LinkedIn messaging and outreach safely: no public messaging API for individuals, browser-automation risks, invite and InMail quotas, pacing, soft throttling. Summon before automating LinkedIn messages, invites or inbox reading.",
+   "name": "pro-linkedin-messaging-engineer",
+   "source": "./plugins/pro-linkedin-messaging-engineer",
+   "tags": [
+    "linkedin",
+    "messaging",
+    "outreach",
+    "browser-automation"
+   ],
+   "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Plans Instagram direct-message integrations: the Messaging API for professional accounts via the Meta app and a linked page, review and permissions, the messaging window, webhooks, and why unofficial private-API clients risk bans. Summon before automating Instagram DMs.",
+   "name": "pro-instagram-messaging-engineer",
+   "source": "./plugins/pro-instagram-messaging-engineer",
+   "tags": [
+    "instagram",
+    "messaging",
+    "meta",
+    "webhooks"
+   ],
+   "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Plans Facebook Messenger integrations: the Messenger Platform for pages (Meta app, page token, webhooks, review, messaging window and tags), and why automating a personal account is unsupported. Summon before building a Messenger bot or inbox tool.",
+   "name": "pro-facebook-messenger-engineer",
+   "source": "./plugins/pro-facebook-messenger-engineer",
+   "tags": [
+    "messenger",
+    "facebook",
+    "meta",
+    "webhooks"
+   ],
+   "version": "0.1.0"
   }
  ]
 }
