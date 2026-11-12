@@ -1,0 +1,70 @@
+{
+ "config.json": [
+  "ack_timeout_s",
+  "deliver_deadline_s",
+  "ready_timeout_s",
+  "trusted_marketplaces"
+ ],
+ "history/*": [
+  "answered",
+  "entry",
+  "ev",
+  "failed",
+  "forked_from",
+  "id",
+  "reason",
+  "resumed_from",
+  "t",
+  "timeout",
+  "workdir"
+ ],
+ "registry.json": [
+  "entries",
+  "seeded",
+  "version"
+ ],
+ "run/msgs/*": [
+  "answered_at",
+  "attempts",
+  "body",
+  "chain",
+  "created",
+  "deadline",
+  "from",
+  "id",
+  "injected_at",
+  "kind",
+  "overdue",
+  "parent",
+  "project",
+  "read_at",
+  "reply_to",
+  "session",
+  "state",
+  "task",
+  "to",
+  "via"
+ ],
+ "run/sandbox_probe.json": [
+  "ok",
+  "reason",
+  "t"
+ ],
+ "run/state/*": [
+  "blocks",
+  "claude_session_id",
+  "delivering",
+  "last_activity",
+  "last_event",
+  "ready",
+  "reason",
+  "state",
+  "task",
+  "transcript_path",
+  "updated"
+ ],
+ "run/summons.log": [
+  "name",
+  "t"
+ ]
+}

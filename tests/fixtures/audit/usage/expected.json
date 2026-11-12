@@ -1,0 +1,31 @@
+{
+ "canaries": [
+  "CANARY-ROOT-BODY-41",
+  "CANARY-CHILD-BODY-42",
+  "CANARY-ROOT-REPLY-43",
+  "CANARY-TOOL-ARG-44",
+  "CANARY-TOOL-RESULT-45",
+  "CANARY-PATH-46",
+  "CANARY-RESUME-BODY-47"
+ ],
+ "child_message": "m-0000000005",
+ "child_session": "00000000-0000-4000-8000-000000000001",
+ "child_task": "t-00000001",
+ "exchanges": {
+  "dedup_key": "message.id + requestId",
+  "raw_assistant_rows": 7,
+  "unique": 4
+ },
+ "fork_copy_session": "00000000-0000-4000-8000-0000000000f1",
+ "root_message": "m-0000000001",
+ "root_session": "00000000-0000-4000-8000-000000000002",
+ "root_task": "fx-root",
+ "token_sum_rule": "input + output + cache_creation_input + cache_read_input",
+ "tokens": {
+  "all_unique": 250,
+  "child_task_own": 80,
+  "root_session_only": 30,
+  "root_task_own": 140,
+  "trace_total": 220
+ }
+}
