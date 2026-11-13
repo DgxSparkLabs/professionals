@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.5.3
+
+Docs and version only; no code change.
+
+- Three generic monitoring roles added to the marketplace (commit 82ffe8d): `access-researcher` (official, permitted ways to read a platform, with limits, terms and fallbacks), `source-scout` (finds and vets public sources for a topic, with trial questions), `editorial-investigator` (traces a claim or trend to its origin and gives a verdict with sources).
+- Upgrade note: message pruning (0.5.2) is on by default with a 30-day retention (`msg_retention_days`; 0 keeps everything). See "Upgrading from 0.3.x" in the README.
+
 ## 0.5.2
 
 Fixes from the delegation pilot.
