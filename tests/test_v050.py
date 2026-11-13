@@ -279,3 +279,49 @@ class FailoverUnit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Switches051(ProTestCase):
+    """0.5.1: config switches wake_on_send and failover; the re-run says the first attempt may have partly run."""
+    def test_wake_on_send_false_refuses_send_and_ask(self):
+        self.config({"wake_on_send": False})
+        r = self.pro("send", "beta", "hi")
+        self.assertEqual(r.returncode, 5, r.stdout + r.stderr)
+        r = self.pro("ask", "beta", "hi", "--wait", "5")
+        self.assertEqual(r.returncode, 5, r.stdout + r.stderr)
+        self.assertEqual(self.sessions_alive(), [])
+
+    def test_wake_on_send_default_still_wakes(self):
+        r = self.pro("send", "beta", "hi")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(any(s.startswith("pro-beta") for s in self.sessions_alive()))
+
+    def test_failover_false_does_not_rerun(self):
+        self.config({"failover": False})
+        self.summon("alpha")
+        s = [x for x in self.sessions_alive() if x.startswith("pro-alpha")][0]
+        self.ok("send", "alpha", "SLEEP 60\nNOREPLY", "--task", "t-off")
+        self.wait_until(lambda: len(self.acts(s)) == 1, 10, "first delivery")
+        subprocess.run(["tmux", "-L", self.sock, "kill-session", "-t", "=" + s])
+        self.ok("pump")
+        time.sleep(2)
+        self.ok("pump")
+        tm = [m for m in self.msgs() if m["kind"] == "task" and m["task"] == "t-off"]
+        self.assertEqual(len(tm), 1, tm)
+
+    def test_rerun_message_warns_about_side_effects(self):
+        self.summon("alpha")
+        s = [x for x in self.sessions_alive() if x.startswith("pro-alpha")][0]
+        self.ok("send", "alpha", "SLEEP 4\nECHO again", "--task", "t-hdr")
+        self.wait_until(lambda: len(self.acts(s)) == 1, 10, "first delivery")
+        subprocess.run(["tmux", "-L", self.sock, "kill-session", "-t", "=" + s])
+        r = self.pro("wait", "t-hdr", "--timeout", "60")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        import importlib.machinery, importlib.util
+        ld = importlib.machinery.SourceFileLoader("pros_mod", PRO)  # render() is what is pasted into the session
+        spec = importlib.util.spec_from_loader("pros_mod", ld)
+        mod = importlib.util.module_from_spec(spec)
+        ld.exec_module(mod)
+        first, second = [m for m in self.msgs() if m["kind"] == "task" and m["task"] == "t-hdr"]
+        self.assertNotIn("previous attempt failed", mod.render(first))
+        self.assertIn("previous attempt failed: check what is already done before repeating side effects", mod.render(second))

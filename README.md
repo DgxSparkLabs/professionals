@@ -151,3 +151,10 @@ Operations guide: [docs/audit-operations.md](docs/audit-operations.md). Privacy 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Upgrading from 0.3.x
+
+Two defaults changed. Both can be turned off in `~/.professionals/config.json` (`$PRO_HOME/config.json`).
+
+- **Wake on send (0.4.0).** `pros send` to an allowlisted professional that is not running now starts it, as `pros ask` already did; before, it exited 5. Turn off for all calls with `{"wake_on_send": false}`, or per call with `--no-wake`. With it off, `pros ask` also refuses instead of summoning.
+- **Failover (0.5.0).** A task whose professional dies, or misses its deadline while broken, is re-run once on a fresh session (or on a `--fallback` you named). The first attempt may have partly done the work, so the re-run can repeat side effects; the new session is told so in its message. Turn off with `{"failover": false}` (or `{"max_attempts": 1}`).
