@@ -1,7 +1,7 @@
 {
   "name": "professionals",
   "description": "Core system: the pros command and the skill that lets any Claude session list, summon, message, delegate to and create professionals.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "author": {
     "name": "DgxSparkLabs"
   },
