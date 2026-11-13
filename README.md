@@ -66,6 +66,9 @@ Full recorded run: [tests/fixtures/real-run-1.md](tests/fixtures/real-run-1.md).
 | `linux-ops` | systemd units, hardening, timers, journald, VMs | `pro-linux-ops` |
 | `speckit-driver` | Drives the spec-kit flow from specify to implement | `pro-speckit-driver` |
 | `exhaustive-researcher` | Complete, dated, sourced research with coverage counts | `pro-exhaustive-researcher` |
+| `access-researcher` | Official, permitted ways to read a platform, with limits, terms and fallbacks | `pro-access-researcher` |
+| `source-scout` | Finds and vets public sources for a topic, with trial questions | `pro-source-scout` |
+| `editorial-investigator` | Traces a claim or trend to its origin and gives a verdict with sources | `pro-editorial-investigator` |
 | `professional-smith` | Creates, trains, validates and publishes new professionals | `pro-professional-smith` |
 | `ship-gatekeeper` | Checks a change against the repo's own rules before merge: SHIP or DON'T SHIP with the exact missing items (created by `professional-smith`) | `pro-ship-gatekeeper` |
 | `systemd-hardening-auditor` | Audits a systemd service and proposes a hardened drop-in with the risk of each line (created by `professional-smith`) | `pro-systemd-hardening-auditor` |
