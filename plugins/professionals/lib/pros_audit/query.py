@@ -444,6 +444,11 @@ class Query:
             evals = self._evals(conn)
             ex = self._q(conn, "SELECT * FROM exchange WHERE msg IN (%s) AND confidence='verified'" % qm, msgs)
             att = self._q(conn, "SELECT * FROM attempt WHERE msg IN (%s) ORDER BY msg, n" % qm, msgs)
+            fo = {}  # B2: failover re-runs carry attempt, retry_of and via on msg_created (optional fields)
+            for e in self._q(conn, "SELECT msg, data FROM event WHERE action='msg_created' AND msg IN (%s)" % qm, msgs):
+                d = json.loads(e["data"])
+                if d.get("attempt"):
+                    fo[e["msg"]] = {"attempt": d["attempt"], "of": d.get("retry_of"), "via": d.get("via_pro")}
             asg = []
             for r in rows:
                 e = self._effective(evals.get(r["msg"], []), now)
@@ -454,6 +459,8 @@ class Query:
                      "orphan": bool(r["orphan"]), "evaluation": self._ev_view(e) if e else None}
                 if r["task_form"]:
                     a["task_form"] = r["task_form"]
+                if r["msg"] in fo:
+                    a["failover"] = fo[r["msg"]]
                 if mine:
                     a["own_tokens"] = self._tok(mine)
                 asg.append(a)

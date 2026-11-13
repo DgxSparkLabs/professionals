@@ -6,7 +6,7 @@ ENVELOPE_REQUIRED = ("v", "id", "t", "action", "actor", "origin", "data")
 ACTORS = ("user", "professional", "system", "hook", "pump", "operator", "importer")
 
 ACTIONS = {
-    'msg_created': (('body_bytes', 'chain_len', 'deadline', 'from_role', 'kind', 'parent', 'project', 'task', 'to'), ('from_pro', 'origin_session', 'task_form'), ('msg',)),
+    'msg_created': (('body_bytes', 'chain_len', 'deadline', 'from_role', 'kind', 'parent', 'project', 'task', 'to'), ('attempt', 'from_pro', 'origin_session', 'retry_of', 'task_form', 'via_pro'), ('msg',)),
     'msg_claimed': (('attempt', 'via'), (), ('msg',)),
     'msg_injected': (('attempt', 'dup', 'tmux', 'via'), (), ('msg', 'pro', 'run', 'session')),
     'msg_answered': (('answered_by', 'reply_msg'), (), ('msg',)),

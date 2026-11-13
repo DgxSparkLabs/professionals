@@ -1,6 +1,6 @@
 # professionals: specification
 
-Status: v1 shipped, v2 implemented in 0.2.0 (this sheet describes both).
+Status: v1 shipped, v2 implemented in 0.2.0 (this sheet describes both); failover (R4b) in 0.5.0.
 
 ## 1. Idea
 
@@ -37,6 +37,7 @@ There are two kinds of professional:
 - R3. Messages are files. Delivery to a busy professional is queued and delivered at the end of its turn (Stop hook) or pasted when it is idle. Bodies over 2 KB arrive as a pointer (`pros read <id>`). A message is acted on once; a restart resends each unanswered task once, marked as a possible duplicate, counted in `resends`; after `max_resends` (default 1) restarts, or once its deadline passed, the task fails and its sender gets one note, so a crash loop never redelivers it without end.
 - R4. Every task has a deadline; an overdue task produces a timeout notice to its sender. `pros wait` (and `ask`) returns the newest real reply to the latest ask of that task id, and the timeout notice only when no real reply exists, so a late reply is never hidden by the notice and a reused task id never returns an earlier ask's answer. A wait ends with exit 5 (`stuck: <reason>`) when its target is gone, stuck (busy with no activity for `stuck_min`), at a usage limit, or in a dialog for 20 s.
 - R4a. `pros send` to an allowlisted professional that is not running starts it, as `ask` does (wake on message). The caps are checked first and refuse with exit 4 before anything is stored; otherwise the message is stored and queued before the start, so a start that fails (exit 5) keeps it queued for the next start or until its deadline. `--no-wake` keeps the old refusal (exit 5, nothing stored).
+- R4b. Failover. When the professional holding a task dies, or the task passes its deadline while its target is gone, stuck, in a dialog or at a usage limit, the task is re-run: on the fallback the sender named (`pros send|ask --fallback <name>`), else on a fresh session (`summon --fresh`) of the same professional, whose broken session is stopped first. With a fallback, a deadline miss re-runs even when the target is only busy; without one, a busy target keeps the R4 timeout note and late reply (a re-run would discard work in progress). At most `max_attempts` runs per task (default 2, including the first; 1 turns failover off and keeps the 0.4.0 behaviour); a queued task without a fallback is not re-run. The re-run is a new message (same task id and sender, `attempt` n, `retry_of` the failed message, `fo_via` the professional that failed; its header ends `via=<name> attempt=<n>`; with a fallback the chain ends in the fallback). It is stored and queued before the failed attempt is closed, and started by a separate `pros summon` in a clean environment, so the allowlist and the caps apply (a refused or failed start keeps it queued, as R4a). The sender gets one note per failed attempt (a progress note, which does not end a wait) and, when no attempt is left, one final note. The first reply wins: later replies from other attempts are stored, not delivered. The fallback must be allowlisted (exit 4), not the target or the sender (exit 2), and not already in the chain (exit 4); a professional with `may_summon: false` cannot name one (exit 4) and its tasks are not re-run. Audit: the re-run's `msg_created` carries `attempt`, `retry_of`, `via_pro`; the failed attempt's `msg_failed` has reason `recipient_died` or `deadline_missed`; `pros audit trace` shows the re-run in the first attempt's tree with `failover: {attempt, of, via}`.
 - R5. Delegation chains travel with the message; revisiting a name in the chain, a wait-for cycle, or a chain deeper than `max_depth` is refused.
 - R6. Permissions: sessions start in `dontAsk` mode with an allowlist from the persona's `tools:` line intersected with a fixed safe list; sensitive paths are denied for read and edit; the Claude Code sandbox is used when the machine allows it.
 - R7. `pros new`, `pros validate`, `pros publish` scaffold, check and publish a persona.
@@ -109,7 +110,8 @@ Live, reaped and lost describe the process and are independent of the state abov
 
 - The header is written by the CLI, never by the sender. A header marker inside a body is rewritten so it cannot pose as one.
 - Answer a task with `pros reply <task> - <<'EOF' ... EOF`. A reply is final.
-- Send with `pros send` (asynchronous; starts an allowlisted target that is not running, unless `--no-wake`) or `pros ask --wait N` (at most 100 seconds; continue with `pros wait`).
+- Send with `pros send` (asynchronous; starts an allowlisted target that is not running, unless `--no-wake`) or `pros ask --wait N` (at most 100 seconds; continue with `pros wait`). Both take `--fallback <name>` (R4b).
+- A re-run (R4b) adds ` via=<name> attempt=<n>` at the end of the header.
 
 ## 7. Exit codes
 
@@ -131,6 +133,7 @@ All tests run with a stand-in `claude` program on a private tmux socket and a te
 | Summon, reuse, lock race, trust dialog, startup failure | `tests/test_summon.py` |
 | Messaging, queueing, ack and retry, long bodies | `tests/test_messaging.py`, `tests/test_reliability1.py` |
 | Resend counter, latest reply on wait, stuck target ends a wait, audit status before import, wake on message | `tests/test_v040.py` |
+| Failover: re-run on a fresh session or a fallback, attempt cap, one note per attempt, first answer wins, caps, audit trace | `tests/test_v050.py` |
 | Chains, loops, deadlock refusal | `tests/test_chain.py` |
 | Caps and budgets | `tests/test_caps.py` |
 | Pane classifier | `tests/test_classifier.py` |

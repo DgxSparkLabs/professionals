@@ -382,6 +382,33 @@
            "enum": [
             "hashed"
            ]
+          },
+          "failover": {
+           "type": "object",
+           "additionalProperties": false,
+           "required": [
+            "attempt",
+            "of",
+            "via"
+           ],
+           "properties": {
+            "attempt": {
+             "$ref": "#/$defs/count"
+            },
+            "of": {
+             "$ref": "#/$defs/nullable_msg"
+            },
+            "via": {
+             "anyOf": [
+              {
+               "$ref": "#/$defs/name"
+              },
+              {
+               "type": "null"
+              }
+             ]
+            }
+           }
           }
          }
         }

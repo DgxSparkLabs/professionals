@@ -24,12 +24,12 @@ TABLES = ("events", "assignments", "evaluations", "exchanges")
 PREFIX = {"message": "a", "session": "s", "task": "t", "professional": "p", "run": "r", "label": "l", "project": "j", "revision": "v",
           "evaluation": "e", "criterion": "c", "wait": "w", "event": "x", "model": "k"}
 # data field -> pseudonym class. Strings not listed here and not in KEEP_STR are dropped.
-PSEUDO = {"parent": "message", "target_msg": "message", "returned_msg": "message", "reply_msg": "message", "target": "message", "task": "task",
+PSEUDO = {"parent": "message", "retry_of": "message", "via_pro": "professional", "target_msg": "message", "returned_msg": "message", "reply_msg": "message", "target": "message", "task": "task",
           "to": "professional", "from_pro": "professional", "caller": "professional", "renamed_from": "professional", "wait": "wait",
           "run": "run", "parent_run": "run", "session": "session", "origin_session": "session", "parent_session": "session", "project": "project",
           "revision": "revision", "eval": "evaluation", "supersedes": "evaluation", "evaluator": "label", "evaluator_version": "label",
           "rubric": "label", "rubric_version": "label", "value": "label", "target_event": "event"}
-NAME_KEYS = ("to", "from_pro", "caller", "renamed_from", "reader")
+NAME_KEYS = ("to", "from_pro", "via_pro", "caller", "renamed_from", "reader")
 KEEP_STR = {"task_form", "returned", "kind", "from_role", "via", "answered_by", "reason", "outcome", "origin", "scope", "status", "evaluator_kind", "target_kind",
             "observed_by", "source", "class", "change", "mode", "format", "hook", "setting", "fields"}
 DROP = {"tmux", "transcript_ref", "evidence", "manifest_sha256", "export", "batch"}

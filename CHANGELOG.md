@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.5.0
+
+- Failover: when the professional holding a task dies, or the task passes its deadline while the target is gone, stuck, in a dialog or at a usage limit, `pros` re-runs the task on a fresh session of the same professional (the broken one is stopped first), or on a fallback the sender named with `pros send|ask --fallback <name>`. With a fallback, a deadline miss re-runs even when the target is only busy; without one, a busy target keeps the timeout note and the late reply.
+- At most `max_attempts` runs per task (config.json, default 2 including the first; 1 turns failover off and keeps the 0.4.0 behaviour). When no attempt is left the task fails with one final note; a later manual summon does not resend it.
+- The re-run is a new message: same task id and sender, `attempt`, `retry_of`, `fo_via`; its header ends `via=<name> attempt=<n>`; with a fallback the chain ends in the fallback. It is stored and queued before the failed attempt is closed (store-first), and started by a separate `pros summon` with a clean environment, so the allowlist and the caps apply: a refused start keeps it queued and the note says why.
+- The sender gets one note per failed attempt. The note is progress: it does not end `pros wait`/`ask`, which follow the re-run (also to a fallback). The first reply wins; a later reply from another attempt is stored, not delivered.
+- `--fallback` is refused with exit 4 when the name is not allowlisted or is already in the chain, or when the sender has `may_summon: false`; with exit 2 when it names the target or the sender.
+- `pros wait` returns the final note instead of `stuck: gone` when the pump wrote it in the same pass.
+- Audit (additive, event schema stays v1, store stays v2): `msg_created` has optional `attempt`, `retry_of`, `via_pro` (pseudonymised in redacted exports); `msg_failed` has reasons `recipient_died` and `deadline_missed`; the derived tree puts a re-run in its first attempt's tree, and `pros audit trace` shows `failover: {attempt, of, via}` (query schema: optional field). Event data is stored as JSON and no derived column was added, so no store migration is needed (the store stays at version 2). An older `pros` importing these events would quarantine them (its allowlist predates the fields); upgrade before importing.
+
 ## 0.4.0
 
 - Wake on message: `pros send` to an allowlisted professional that is not running starts it, as `ask` already did, instead of exit 5. The caps are checked first and still refuse with exit 4 before anything is stored. Otherwise the message is stored and queued before the start, so a start that fails keeps it queued (for the next start, or until its deadline sends the usual timeout note). `--no-wake` keeps the old refusal.
