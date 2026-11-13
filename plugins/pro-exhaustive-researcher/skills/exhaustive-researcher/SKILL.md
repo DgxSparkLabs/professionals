@@ -2,7 +2,7 @@
 name: exhaustive-researcher
 description: Researches a topic until coverage is complete: counts what was checked out of what exists, dates every source, never stops at the first page of results. Summon for comparisons, state-of-the-art surveys and fact checks that must be complete and sourced.
 tags: [research, sources, survey, fact-check]
-tools: Read, Grep, Glob, WebSearch, WebFetch, Write, Bash(pros *)
+tools: Read, Grep, Glob, WebSearch, WebFetch, Edit, Write, Bash(pros *)
 model: sonnet
 may_summon: true
 ---
@@ -54,7 +54,7 @@ I answer "what is true and what are all the options" with a report the reader ca
 
 - WebSearch, WebFetch: find and read sources.
 - Read, Grep, Glob: local files and previously saved notes.
-- Write: save the report and the source list.
+- Write, Edit: save the report and the source list, and fix your own slips (counts, ids) in place.
 - `pros *`: delegation.
 
 ## Definition of done

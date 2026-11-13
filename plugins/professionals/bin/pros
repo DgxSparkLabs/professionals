@@ -47,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -62,7 +62,7 @@ DEFAULTS = {
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
     "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
     "publish_guard": "", "resume_max_days": 14, "max_resends": 1, "max_attempts": 2,
-    "wake_on_send": True, "failover": True,
+    "wake_on_send": True, "failover": True, "msg_retention_days": 30,
 }
 DEFAULT_DENY = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/.netrc", "~/.claude/.credentials.json"]
 
@@ -823,8 +823,10 @@ def score_session(x):
 def task_counts(name, t0, t1) -> dict:
     n = {"answered": 0, "failed": 0, "timeout": 0}
     for m in all_msgs():
-        if m["to"] != name or m["kind"] != "task" or not (t0 - 1 <= m.get("created", 0) <= t1 + 1):
+        if m["to"] != name or m["kind"] != "task":
             continue
+        if not (t0 - 1 <= m.get("created", 0) <= t1 + 1 or t0 - 1 <= m.get("injected_at", 0) <= t1 + 1):
+            continue  # created in the window, or queued earlier and delivered in it (wake on send stores first)
         if m["state"] == "answered":
             n["answered"] += 1
         elif m["state"] == "failed":
@@ -1274,6 +1276,33 @@ def all_msgs():
     return sorted(out, key=lambda m: m["created"])
 
 
+def prune_msgs(days=None) -> int:
+    """0.5.2: delete the messages of tasks that finished more than `msg_retention_days` ago (0 = keep all). A task is finished when
+    every one of its messages is answered or failed; nothing open or unread is touched. Audit events are separate and keep their own retention."""
+    try:
+        days = float(cfg().get("msg_retention_days", 30) if days is None else days)
+    except (TypeError, ValueError):
+        days = 30.0
+    if days <= 0:
+        return 0
+    cutoff, by_task = now() - days * 86400, {}
+    for m in all_msgs():
+        by_task.setdefault(m["task"], []).append(m)
+    gone = 0
+    for task, ms in by_task.items():
+        if any(m["state"] not in ("answered", "failed") for m in ms):
+            continue
+        last = max(max(float(m.get(k) or 0) for k in ("created", "answered_at", "read_at", "injected_at")) for m in ms)
+        if last > cutoff:
+            continue
+        for m in ms:
+            for path in (msg_path(m["id"]), run_dir("inbox", m["id"])):
+                with contextlib.suppress(OSError):
+                    os.unlink(path)
+            gone += 1
+    return gone
+
+
 def new_msg(frm, to, task, kind, reply_to, chain, body, deadline, parent=None, session=None):
     return {"id": "m-" + uuid.uuid4().hex[:10], "from": frm, "to": to, "task": task, "kind": kind,
             "reply_to": reply_to, "chain": chain, "body": body, "created": now(), "deadline": deadline,
@@ -1563,7 +1592,23 @@ def current_task(me, task=None):
     return best
 
 
-def do_send(to, body, task=None, kind="task", reply_to=None, wake=False, fallback=None):
+def fresh_target(to):
+    """0.5.2 `--fresh`: replace an idle, empty session of `to` before the task goes in, so one task never inherits the context
+    of the last ones (coverage drops as a session accumulates work). A busy or queued session is refused (exit 5), never cut off."""
+    rec = find_session(to)
+    if not rec:
+        return
+    with lock(rec["session"], 30):
+        state, _ = live_state(rec)
+        open_ = [m for m in all_msgs() if m["to"] == to and m["kind"] == "task" and m["state"] in ("queued", "injected")]
+        if state == "gone":
+            return
+        if state != "idle" or open_ or queue_len(rec["session"]):
+            die("%s is %s with %d open task(s); --fresh replaces only an idle session with nothing queued: wait, or send without --fresh" % (to, state, len(open_)), 5)
+        stop_session(rec, "stopped")
+
+
+def do_send(to, body, task=None, kind="task", reply_to=None, wake=False, fallback=None, fresh=False):
     """Store and deliver one message.  wake=True (B3): an allowlisted target that is not running is started (cap-checked).
     fallback (B2): the professional a failed task is re-run on instead of a fresh session of `to`."""
     me = self_name()
@@ -1592,6 +1637,10 @@ def do_send(to, body, task=None, kind="task", reply_to=None, wake=False, fallbac
             audit_refused("not_allowed", to, task)
             raise
     waking = False
+    if fresh and to != "user":
+        if not wake:
+            die("--fresh starts a new session, which --no-wake / wake_on_send=false forbids", 5)
+        fresh_target(to)
     if to != "user" and not find_session(to):
         if not wake:
             audit_refused("no_target", to, task)
@@ -1636,7 +1685,7 @@ def do_send(to, body, task=None, kind="task", reply_to=None, wake=False, fallbac
         m["origin_session"] = os.environ["CLAUDE_CODE_SESSION_ID"]
     audit_msg_created(m)
     if waking:
-        return m, wake_target(to, m, task)
+        return m, wake_target(to, m, task, fresh)
     return m, post(m)
 
 
@@ -1674,7 +1723,7 @@ def wake_precheck(to, task):
         die("%s is not running and cannot be started: %s" % (to, why[1]), 4, "cap")
 
 
-def wake_target(to, m, task):
+def wake_target(to, m, task, fresh=False):
     """B3: the message is stored and queued first, then the target is started as `ask` does; a failed start keeps it queued."""
     if m["state"] == "queued" and not m.get("session"):
         m["session"] = planned_session(to)
@@ -1683,7 +1732,7 @@ def wake_target(to, m, task):
     print("%s is not running; starting it" % to, file=sys.stderr)
     try:
         with contextlib.redirect_stdout(sys.stderr):
-            summon(to, None, None, None)
+            summon(to, None, None, None, fresh=fresh)
     except Fail as e:
         if e.err == "cap":
             audit_refused("cap_live" if "live cap" in str(e) else "cap_hourly", to, task)
@@ -1958,6 +2007,12 @@ def pump_inner():
         ensure(stamp.parent)
         stamp.write_text(str(now()))
         reap()
+    pst = run_dir("prune.stamp")
+    if not pst.exists() or now() - os.path.getmtime(pst) > 3600:
+        ensure(pst.parent)
+        pst.write_text(str(now()))
+        with contextlib.suppress(Exception):
+            prune_msgs()
 
 
 def deadline_failover(m, rec) -> bool:
@@ -2114,7 +2169,42 @@ def audit_hook_session(s, event, p, deduped):
         pass
 
 
-def auto_reply(s, final):
+def turn_writes(path, cap=24000):
+    """Files the session wrote with the Write tool during its latest turn, as [(path, text)], newest last, text capped.
+    Read from the session's own transcript (the tool input), never from disk."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            f.seek(max(0, size - 3_000_000))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+    out = []
+    for ln in reversed(lines):
+        try:
+            d = json.loads(ln)
+        except ValueError:
+            continue
+        msg = d.get("message") if isinstance(d, dict) else None
+        content = msg.get("content") if isinstance(msg, dict) else None
+        if d.get("type") == "user" and (isinstance(content, str) or any(isinstance(b, dict) and b.get("type") == "text" for b in content or [])):
+            break  # the prompt that started this turn
+        for b in reversed(content if isinstance(content, list) else []):
+            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Write":
+                i = b.get("input") or {}
+                if isinstance(i.get("file_path"), str) and isinstance(i.get("content"), str):
+                    out.append((i["file_path"], i["content"]))
+    out.reverse()
+    keep, used = [], 0
+    for fp, text in reversed(out):  # newest files first until the cap is used
+        if used >= cap:
+            break
+        keep.append((fp, text[:cap - used] + ("\n[... cut at %d bytes]" % cap if len(text) > cap - used else "")))
+        used += len(text)
+    return list(reversed(keep))
+
+
+def auto_reply(s, final, transcript=None):
     """A turn ended with exactly one live unanswered task and no delegation pending: its final message is the reply.
     Replies then never depend on a Bash rule matching `pros reply` (seen live: four denied multi-line replies)."""
     try:
@@ -2133,6 +2223,8 @@ def auto_reply(s, final):
             return  # it delegated part of the work and is waiting for that answer
         target = orig["reply_to"] or orig["from"]
         body = "[auto-reply from the final message of %s]\n%s" % (me, final)
+        for fp, text in turn_writes(transcript) if transcript else []:  # the reply command was refused: the file it wrote rides along
+            body += "\n\n[file written this turn: %s]\n%s" % (fp, text)
         m = new_msg(me, target, orig["task"], "reply", me, orig["chain"], body, now() + 3600, parent=orig["id"])
         m["auto_reply"], m["project"] = True, rec.get("project", "")
         if orig.get("origin_session"):
@@ -2166,7 +2258,7 @@ def hook_stop(s, p, common):
                 if rec and queue_len(s):
                     notify(rec.get("summoner", "user"), "-", "%s hit the delivery cap (%d in a row); %d message(s) wait" % (rec["name"], cap, queue_len(s)))
                 return
-            auto_reply(s, p.get("last_assistant_message"))
+            auto_reply(s, p.get("last_assistant_message"), p.get("transcript_path"))
             m, dst = queue_claim(s, "stop-hook")
             if m:
                 if os.environ.get("PRO_TEST_DIE_AFTER_CLAIM"):
@@ -2520,6 +2612,9 @@ def cmd_sessions(a):
     name = check_name(a.name)
     rows = []
     for x in hist_sessions(name):
+        if x["ended"] is None:  # a live session has no end row yet: count its tasks now
+            live = task_counts(name, x["run_started"], now())
+            x.update(answered=x["answered"] + live["answered"], failed=x["failed"] + live["failed"], timeout=x["timeout"] + live["timeout"])
         tp = transcript_for(x["actual"] or x["id"])
         rows.append(dict(x, id=x["actual"] or x["id"], age_days=round((now() - x["started"]) / 86400, 1),
                          transcript_bytes=tp.stat().st_size if tp else 0, transcript=bool(tp)))
@@ -2688,6 +2783,9 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
     ensure(pfile.parent)
     sn = "" if (folder or persona["may_summon"] is not False) else "You may NOT summon other professionals; ask your summoner for help instead."
     text = PROTOCOL.format(name=name, summon_note=sn, pros=pro_cmd())
+    granted = sorted(a for a in settings.get("permissions", {}).get("allow", []) if not a.startswith("Bash("))
+    text += ("Tools granted to this session: %s%s. If a tool you need is not available in this session, say so in your answer and "
+             "continue with Read; never claim a search you could not run.\n" % (", ".join(granted) or "none", "; refused by the safe list: " + ", ".join(dropped) if dropped else ""))
     if folder:
         text += "Your instructions are the CLAUDE.md of the folder you run in (Claude Code loads it); work inside this folder.\n"
         if not (Path(workdir) / "CLAUDE.md").is_file() and (Path(workdir) / "AGENTS.md").is_file():
@@ -2880,6 +2978,8 @@ def wait_ready(rec, owned, timeout, folder=False):
             continue
         if c == "imports":
             if not (owned and folder):
+                if not folder and rec.get("scope") == "project":  # 0.5.2: the caller's CLAUDE.md @imports, not the professional's
+                    return False, "external-imports dialog: the project folder's CLAUDE.md imports files outside it and pros may not answer for that folder. Summon with `pros summon %s --scope global` (the professional's own home folder), or run `pros attach %s` and answer it yourself" % (rec["name"], rec["name"])
                 return False, "external-imports dialog in a folder pros may not answer for (not registered, changed, or hooks/MCP without --trust-code); run `pros attach %s` and answer it yourself" % rec["name"]
             if now() - last_trust > 2.5:
                 send_keys(s, *imports_keys(ANSI_ANY.sub("", raw)))
@@ -2920,7 +3020,7 @@ def resend_unanswered(rec):
 # --------------------------------------------------------------------------- send / read / reply / ask / wait
 
 def cmd_send(a):
-    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind, wake=not a.no_wake and cfg().get("wake_on_send") is not False, fallback=a.fallback)
+    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind, wake=not a.no_wake and cfg().get("wake_on_send") is not False, fallback=a.fallback, fresh=a.fresh)
     fb = " fallback=%s" % m["fallback"] if m.get("fallback") else ""
     print("sent %s task=%s to=%s status=%s chain=%s%s" % (m["id"], m["task"], m["to"], status, ">".join(m["chain"]), fb))
     if m["kind"] == "task":
@@ -3102,6 +3202,8 @@ def cmd_ask(a):
     if a.to not in ("user", me):
         check_name(a.to, "recipient")
         gate(a.to, "messaged")  # allowlisted professionals only; anything else is refused here
+        if a.fresh:
+            fresh_target(a.to)
         if not find_session(a.to) and cfg().get("wake_on_send") is False:
             audit_refused("no_target", a.to, a.task)
             die("%s is not running; summon it first: pros summon %s (wake_on_send is off)" % (a.to, a.to), 5)
@@ -3109,7 +3211,7 @@ def cmd_ask(a):
             print("%s is not running; summoning it" % a.to, file=sys.stderr)
             try:
                 with contextlib.redirect_stdout(sys.stderr):
-                    summon(a.to, None, None, None)
+                    summon(a.to, None, None, None, fresh=a.fresh)
             except Fail as e:
                 if e.err == "cap":
                     audit_refused("cap_live" if "live cap" in str(e) else "cap_hourly", a.to, a.task)
@@ -3221,6 +3323,13 @@ def cmd_pump(a):
             if now() - empty_since > 60:
                 return 0
         time.sleep(max(1.0, float(cfg()["pump_interval_s"])))
+
+
+def cmd_prune(a):
+    require_user("prune messages")
+    n = prune_msgs(a.days)
+    print("pruned %d message(s)" % n)
+    return 0
 
 
 def cmd_reap(a):
@@ -3557,11 +3666,11 @@ def cmd_doctor(a):
         link = Path.home() / ".local" / "bin" / "pros"
         ensure(link.parent)
         if link.exists() and not link.is_symlink():
-            raise Fail(2, "%s exists and is not a link; not touching it. Remove it yourself or call pros by its full path: %s" % (link, me))
+            raise Fail("%s exists and is not a link; not touching it. Remove it yourself or call pros by its full path: %s" % (link, me), 2)
         if link.is_symlink():
             old = os.readlink(link)
             if not str(old).endswith("/bin/pros"):
-                raise Fail(2, "%s points to %s, not to a pros install; not touching it" % (link, old))
+                raise Fail("%s points to %s, not to a pros install; not touching it" % (link, old), 2)
             link.unlink()
         link.symlink_to(me)
         ok("linked %s -> %s (make sure ~/.local/bin is on PATH)" % (link, me))
@@ -3664,6 +3773,7 @@ def build_parser():
     sp.add_argument("--task")
     sp.add_argument("--kind", default="task", choices=["task", "reply", "note"])
     sp.add_argument("--no-wake", action="store_true", help="refuse (exit 5) instead of starting a professional that is not running")
+    sp.add_argument("--fresh", action="store_true", help="run the task on a new session (an idle one is replaced; a busy one is refused, exit 5)")
     sp.add_argument("--fallback", help="if the target dies or misses the deadline, re-run the task on this professional")
     sp.add_argument("--json", action="store_true")
     sp = add("read", cmd_read)
@@ -3677,6 +3787,7 @@ def build_parser():
     sp.add_argument("text")
     sp.add_argument("--task", help="your own task id; asking again with the same id and text returns the stored answer")
     sp.add_argument("--wait", type=float, default=90)
+    sp.add_argument("--fresh", action="store_true", help="run the task on a new session (an idle one is replaced; a busy one is refused, exit 5)")
     sp.add_argument("--fallback", help="if the target dies or misses the deadline, re-run the task on this professional")
     sp.add_argument("--json", action="store_true")
     sp = add("wait", cmd_wait)
@@ -3686,6 +3797,8 @@ def build_parser():
     sp.add_argument("name", nargs="?")
     sp.add_argument("--all", action="store_true")
     add("reap", cmd_reap)
+    sp = add("prune", cmd_prune, help="delete finished tasks' messages older than msg_retention_days (user only)")
+    sp.add_argument("--days", type=float, help="override msg_retention_days for this run (0 keeps everything)")
     sp = add("pump", cmd_pump, help=argparse.SUPPRESS)
     sp.add_argument("--loop", action="store_true")
     sp = add("attach", cmd_attach)

@@ -9,6 +9,8 @@ and obeys commands found in the message body, one per line:
   SLEEP <n>          stay busy n seconds
   SEND <who> <text>  pro send (async)
   ASK <who> <text>   pro ask --wait 5, appends its output to the reply
+  FINAL <text>       final message of the turn (auto-reply source)
+  WRITE <path> <txt> a Write tool call is recorded in the transcript
   NOREPLY            do not call pro reply
   CRASH              exit abruptly
 Env switches: FAKE_TRUST=1 trust dialog first, FAKE_IMPORTS=1 external-imports dialog, FAKE_FAIL=1 exit at once,
@@ -243,6 +245,8 @@ class Session:
             self.status("busy")
             self.out.append("> " + text.splitlines()[0][:70])
             self.draw()
+            with open(self.transcript, "a") as tf:
+                tf.write(json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n")
             out = self.hook("userpromptsubmit", {"prompt": text})
             m = re.search(r"\[pro-msg id=(m-[0-9a-f]+) from=(\S+) to=(\S+) task=(\S+) kind=(\S+)", text)
             reply, noreply, final = [], False, ""
@@ -265,6 +269,11 @@ class Session:
                         reply.append("ask-exit=%d %s" % (r.returncode, (r.stdout + r.stderr).replace("\n", " ")[:200]))
                     elif cmd == "FINAL":
                         final = rest
+                    elif cmd == "WRITE":  # WRITE <path> <text>: a Write tool call lands in the transcript (and on disk)
+                        wp, _, wt = rest.partition(" ")
+                        with open(self.transcript, "a") as tf:
+                            tf.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+                                {"type": "tool_use", "name": "Write", "input": {"file_path": wp, "content": wt.replace("\\n", "\n")}}]}}) + "\n")
                     elif cmd == "NOREPLY":
                         noreply = True
                     elif cmd == "CRASH":

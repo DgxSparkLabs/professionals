@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.5.2
+
+Fixes from the delegation pilot.
+
+- `pros send|ask --fresh`: the task runs on a new session. An idle session with nothing queued is replaced; a busy one is refused with exit 5 and left alone. Fixes coverage dropping as one session takes more repos (the fresh-per-task rule is now one flag).
+- Message store pruning: `pros prune [--days N]` (user only) and the pump (at most hourly) delete every message of a task that finished (all answered or failed) more than `msg_retention_days` ago, default 30; 0 keeps everything. Open and unread messages are never touched; audit events keep their own retention.
+- `pros sessions` counted 0 tasks for a live session (counts were written only when it ended); it now counts answered, failed and timed-out tasks live, and counts a task that was queued before the session started (wake on send) when it was delivered in that session.
+- `pros doctor --link` refusals print their message and exit 2 (the arguments were swapped: it printed `pros: 2` and exited 1).
+- The imports-dialog start failure for a project-scope summon names `--scope global` as the way out.
+- Auto-reply (used when the professional's `pros reply` is refused) now appends the text of every file the session wrote with the Write tool in that turn (read from its transcript, capped at 24 KB), so a spec written to a file is no longer lost behind a one-line summary.
+- Persona `exhaustive-researcher` gains Edit (it had Write only and could not fix its own slips). A session is told which tools it was granted and to say so when one is missing. `reliability-reviewer` stays read-only on purpose.
+- Tests: `tests/test_v052.py`; `tests/fake_claude.py` gains `WRITE` and records user turns in its transcript.
+- Checked and already fixed by 0.4.0/0.5.x: `pros wait` on a queued task blocks until the answer (test only; no code change).
+- Not changed: one live session per professional name (design note in `docs/design.md`); Grep/Glob missing in some fresh sessions is a Claude Code side effect that `pros` cannot see from outside (the allow rules always contain both).
+
 ## 0.5.1
 
 - Config switches `wake_on_send` and `failover` (both default true; set false in `$PRO_HOME/config.json`). `wake_on_send: false` makes `pros send` and `pros ask` refuse (exit 5) when the target is not running, as before 0.4.0. `failover: false` turns the 0.5.0 re-run off (same as `max_attempts: 1`).

@@ -194,6 +194,7 @@ paste (no typing vs waking idle sessions; cost is pane scraping). Caps refuse wi
   a Claude Code UI change breaks delivery/state detection. `MIN_CLAUDE` = 2.1.224.
 - Persona edits apply only after stop + summon (hash noted, not enforced).
 - A session with a draft in its input gets nothing pasted until it is cleared.
+- One live session per professional name (tmux `pro-<name>`, one registry entry, one queue). Tasks for the same professional run one after another, so a batch of N tasks to one name is serial; for parallel work name several professionals (a folder professional added under another name) or send to different ones. Not changed in 0.5.2 on purpose: N sessions per name would need per-session names in the registry, the queue, `pros wait`, the audit trace and the caps (`max_live` counts sessions), a large change with its own security review. Use `--fresh` (0.5.2) when the problem is context build-up rather than throughput.
 - `max_live` counts sessions across all projects. `ask` waits at most 100 s.
 - A crash between paste and ack can duplicate a task after restart (flagged `dup`).
 - Not read/verified: `tests/`, `commands/start.md`, `plugin.json`, persona plugins, the semantics of

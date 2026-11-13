@@ -27,7 +27,7 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros summon <name> [--scope project\|global] [--mode M] [--model M] [--allow-persona-tools] [--fresh] [--fork] [--session id]` | Start the professional, reuse the live one, or resume its last good session (`resumed=<id>`); `--fresh` starts clean, `--fork` copies the context into a new session |
 | `pros sessions <name> [--json]` | Session history: ids, dates, task counts, score and transcript size |
 | `pros team` | Live professionals with state, current task and summoner |
-| `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note] [--no-wake] [--fallback name]` | Send a message; queued if the target is busy; starts an allowlisted professional that is not running (caps still apply), unless `--no-wake`; `--fallback` names who re-runs the task if the target dies or misses the deadline |
+| `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note] [--no-wake] [--fresh] [--fallback name]` | Send a message; queued if the target is busy; starts an allowlisted professional that is not running (caps still apply), unless `--no-wake`; `--fresh` runs it on a new session (idle one replaced, busy one refused with exit 5); `--fallback` names who re-runs the task if the target dies or misses the deadline |
 | `pros read <id>` | Read a message that arrived as a pointer |
 | `pros inbox` | Replies waiting for you (for sessions that are not professionals) |
 | `pros reply <task> <text>` or `pros reply <task> - <<'EOF'` | Answer a task by its id. Use the quoted heredoc form for any text with backticks, quotes, `$` or newlines: Claude Code denies those inline |

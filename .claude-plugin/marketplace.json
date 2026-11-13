@@ -1,7 +1,7 @@
 {
  "metadata": {
   "description": "A marketplace of AI specialists that summon and delegate to each other.",
-  "version": "0.5.1"
+  "version": "0.5.2"
  },
  "name": "professionals",
  "owner": {
@@ -18,7 +18,7 @@
     "delegation",
     "tmux"
    ],
-   "version": "0.5.1"
+   "version": "0.5.2"
   },
   {
    "category": "builder",

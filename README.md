@@ -156,5 +156,6 @@ MIT. See [LICENSE](LICENSE).
 
 Two defaults changed. Both can be turned off in `~/.professionals/config.json` (`$PRO_HOME/config.json`).
 
+- **0.5.2.** `pros send|ask --fresh` runs a task on a new session (an idle, empty one is replaced; a busy one is refused with exit 5). `pros prune` and the pump delete the messages of tasks finished more than `msg_retention_days` ago (default 30, 0 keeps everything). Summoning in a project whose `CLAUDE.md` imports outside files now says to use `--scope global`.
 - **Wake on send (0.4.0).** `pros send` to an allowlisted professional that is not running now starts it, as `pros ask` already did; before, it exited 5. Turn off for all calls with `{"wake_on_send": false}`, or per call with `--no-wake`. With it off, `pros ask` also refuses instead of summoning.
 - **Failover (0.5.0).** A task whose professional dies, or misses its deadline while broken, is re-run once on a fresh session (or on a `--fallback` you named). The first attempt may have partly done the work, so the re-run can repeat side effects; the new session is told so in its message. Turn off with `{"failover": false}` (or `{"max_attempts": 1}`).
