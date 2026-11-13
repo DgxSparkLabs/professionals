@@ -169,6 +169,15 @@
        },
        "task_form": {
         "$ref": "#/$defs/task_form"
+       },
+       "attempt": {
+        "$ref": "#/$defs/count"
+       },
+       "retry_of": {
+        "$ref": "#/$defs/msg"
+       },
+       "via_pro": {
+        "$ref": "#/$defs/name"
        }
       }
      }
@@ -357,7 +366,9 @@
          "expired_unread",
          "paste_failed",
          "target_stuck",
-         "other"
+         "other",
+         "recipient_died",
+         "deadline_missed"
         ]
        },
        "attempts": {

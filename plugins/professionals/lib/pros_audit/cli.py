@@ -81,6 +81,9 @@ def render_trace(env):
         ev = a["evaluation"]
         out.append("%s%s task=%s to=%s  delivery=%s deadline=%s evaluation=%s confidence=%s" % ("  " * a["depth"], a["msg"], a["task"], a["to"], a["delivery"], a["deadline_status"], ev["status"] if ev else "unreviewed", a["confidence"]))
         out.append("%s  created %s, delivered %s, answered %s%s" % ("  " * a["depth"], _ts(a["created"]), _ts(a["first_delivery"]), _ts(a["answered_at"]), "" if "own_tokens" in a else "; no usage observed"))
+        if a.get("failover"):
+            f = a["failover"]
+            out.append("%s  failover: attempt %d, re-run of %s after %s failed" % ("  " * a["depth"], f["attempt"], f["of"], f["via"]))
         if "own_tokens" in a:
             o = a["own_tokens"]
             out.append("%s  tokens %d (in %d, out %d, cache write %d, cache read %d), cost %s (%s)" % ("  " * a["depth"], o["total"], o["input"], o["output"], o["cache_write"], o["cache_read"], o["cost_usd_api_equivalent"], o["price_state"]))

@@ -46,12 +46,12 @@ All fields below are required unless marked optional. `msg` is the envelope fiel
 
 | Action | Emitted at | `data` fields |
 |---|---|---|
-| `msg_created` | message written (queued) | `kind` task/reply/note, `from_role`, `to`, `task`, `parent` (msg or null), `deadline` (epoch or null), `chain_len`, `project` (hash12), `body_bytes`; optional `from_pro`, `origin_session` |
+| `msg_created` | message written (queued) | `kind` task/reply/note, `from_role`, `to`, `task`, `parent` (msg or null), `deadline` (epoch or null), `chain_len`, `project` (hash12), `body_bytes`; optional `from_pro`, `origin_session`; on a failover re-run (0.5.0) `attempt` (2..max_attempts), `retry_of` (the failed message), `via_pro` (the professional that failed; pseudonymised in a redacted export like `to`) |
 | `msg_claimed` | delivery claim taken | `via` paste/stop-hook, `attempt` |
 | `msg_injected` | text reached the session (`mark_injected`) | `via`, `attempt`, `tmux`, `dup`; envelope `run` and `session` required |
 | `msg_answered` | reply, auto-reply or read closed the task | `answered_by` reply/auto-reply/read, `reply_msg` |
 | `msg_read` | a reply or note was read | `reader` |
-| `msg_failed` | delivery or task failed (T-X5: carries the time the record lacks) | `reason` (deadline_before_delivery, recipient_stopped, expired_unread, paste_failed, target_stuck, other), `attempts` |
+| `msg_failed` | delivery or task failed (T-X5: carries the time the record lacks) | `reason` (deadline_before_delivery, recipient_stopped, expired_unread, paste_failed, target_stuck, other; 0.5.0 adds recipient_died and deadline_missed for an attempt that was re-run or had no attempt left), `attempts` (delivery attempts, not failover runs) |
 | `msg_overdue` | a pump saw the deadline pass unanswered | `deadline`, `observed_by` pump/wait/hook (evidence only; the miss is computed from `deadline` and the answer time) |
 | `msg_refused` | `pros ask` refused before any message exists | `reason` (duplicate, cap_live, cap_hourly, not_allowed, no_target), `to`, `task` |
 | `wait_start` | caller starts `pros wait` or `ask --wait` | `wait` (`w-<hex>`), `caller`, `task`, `target_msg` (or null), `timeout_s` |

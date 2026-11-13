@@ -12,8 +12,14 @@ INF = 9e15
 
 
 def _walk(msgs, mid):
+    """(root, depth, orphan).  A failover re-run (retry_of, B2) sits in the tree of its first attempt, at the same depth."""
     seen, cur, depth = set(), mid, 0
     while True:
+        prev = msgs[cur].get("retry_of")
+        if prev and prev in msgs and prev not in seen:
+            seen.add(cur)
+            cur = prev
+            continue
         par = msgs[cur]["parent"]
         if not par:
             return cur, depth, 0
@@ -50,7 +56,7 @@ def rebuild(conn):
             ended.setdefault(s, []).append(t)
         elif a == "msg_created":
             msgs[m] = {"kind": d["kind"], "parent": d["parent"], "task": d["task"], "form": d.get("task_form"), "to": d["to"], "to_pro": p, "from_role": d["from_role"], "created": t,
-                       "deadline": d["deadline"], "inj": [], "answered": None, "failed": None}
+                       "deadline": d["deadline"], "inj": [], "answered": None, "failed": None, "retry_of": d.get("retry_of")}
         elif m in msgs and a == "msg_injected":
             msgs[m]["inj"].append((t, r, s, d))
         elif m in msgs and a == "msg_answered":

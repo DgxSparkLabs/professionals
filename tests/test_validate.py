@@ -135,16 +135,16 @@ class Validate(ProTestCase):
         r = self.pro("doctor", env={"PRO_CLAUDE_BIN": "/nonexistent/claude"})
         self.assertEqual(r.returncode, 1)
         self.assertIn("fix:", r.stdout)
-        self.assertEqual(self.ok("version").stdout.strip(), "pros 0.4.0")
+        self.assertEqual(self.ok("version").stdout.strip(), "pros 0.5.0")
         root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
         with open(os.path.join(root, "plugins", "professionals", ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
             pv = json.load(f)["version"]
         with open(os.path.join(root, ".claude-plugin", "marketplace.json"), encoding="utf-8") as f:
             mk = json.load(f)
         core = [x["version"] for x in mk["plugins"] if x["name"] == "professionals"]
-        self.assertEqual((pv, core, mk["metadata"]["version"]), ("0.4.0", ["0.4.0"], "0.4.0"), "pros, plugin.json and marketplace.json bump together")
+        self.assertEqual((pv, core, mk["metadata"]["version"]), ("0.5.0", ["0.5.0"], "0.5.0"), "pros, plugin.json and marketplace.json bump together")
         with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as f:
-            self.assertIn("\n## 0.4.0\n", f.read())
+            self.assertIn("\n## 0.5.0\n", f.read())
         self.ok("doctor", "--link")
         link = os.path.join(self.fakehome, ".local", "bin", "pros")
         self.assertTrue(os.path.islink(link))

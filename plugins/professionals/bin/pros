@@ -47,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -61,7 +61,7 @@ DEFAULTS = {
     "stuck_min": 10, "default_mode": "dontAsk", "model": "", "summon_budget_per_hour": 20,
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
     "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
-    "publish_guard": "", "resume_max_days": 14, "max_resends": 1,
+    "publish_guard": "", "resume_max_days": 14, "max_resends": 1, "max_attempts": 2,
 }
 DEFAULT_DENY = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/.netrc", "~/.claude/.credentials.json"]
 
@@ -250,6 +250,8 @@ def audit_msg_created(m, actor=None):
             d["from_pro"] = m["from"]
         if audit_sid(m.get("origin_session")):
             d["origin_session"] = m["origin_session"]
+        if int(m.get("attempt") or 1) > 1:  # B2: a failover re-run (optional fields, events.md)
+            d.update(attempt=int(m["attempt"]), retry_of=m.get("retry_of"), via_pro=m.get("fo_via"))
         audit_emit("msg_created", d, actor or ("system" if role == "system" else None), msg=m["id"], pro=audit_pro(m["to"]))
     except Exception:  # noqa: BLE001
         pass
@@ -1282,8 +1284,9 @@ def sanitize(body: str) -> str:
 
 
 def header(m) -> str:
-    return "[pro-msg id=%s from=%s to=%s task=%s kind=%s reply-to=%s chain=%s]" % (
-        m["id"], m["from"], m["to"], m["task"], m["kind"], m["reply_to"], ">".join(m["chain"]))
+    rerun = " via=%s attempt=%d" % (m.get("fo_via") or "-", int(m["attempt"])) if int(m.get("attempt") or 1) > 1 else ""  # B2: a re-run says so
+    return "[pro-msg id=%s from=%s to=%s task=%s kind=%s reply-to=%s chain=%s%s]" % (
+        m["id"], m["from"], m["to"], m["task"], m["kind"], m["reply_to"], ">".join(m["chain"]), rerun)
 
 
 def pro_cmd() -> str:
@@ -1373,10 +1376,12 @@ def mark_injected(m, via, s=None):
     return m
 
 
-def notify(to, task, text, frm="pro"):
-    """System note into somebody's inbox/queue (never raises)."""
+def notify(to, task, text, frm="pro", progress=False):
+    """System note into somebody's inbox/queue (never raises).  progress=True: a failover note, which never ends a wait."""
     try:
         nm = new_msg(frm, to, task, "note", frm, [to], text, now() + 3600)
+        if progress:
+            nm["progress"] = True
         audit_msg_created(nm, "system")
         post(nm)
     except Exception as e:  # noqa: BLE001
@@ -1555,8 +1560,9 @@ def current_task(me, task=None):
     return best
 
 
-def do_send(to, body, task=None, kind="task", reply_to=None, wake=False):
-    """Store and deliver one message.  wake=True (B3): an allowlisted target that is not running is started (cap-checked)."""
+def do_send(to, body, task=None, kind="task", reply_to=None, wake=False, fallback=None):
+    """Store and deliver one message.  wake=True (B3): an allowlisted target that is not running is started (cap-checked).
+    fallback (B2): the professional a failed task is re-run on instead of a fresh session of `to`."""
     me = self_name()
     if to != "user":
         check_name(to, "recipient")
@@ -1565,6 +1571,17 @@ def do_send(to, body, task=None, kind="task", reply_to=None, wake=False):
         die("refusing to send to yourself", 4)
     if kind not in ("task", "reply", "note"):
         die("kind must be task, reply or note", 2)
+    if fallback is not None:
+        check_name(fallback, "fallback")
+        if kind != "task" or to == "user":
+            die("--fallback is for tasks to a professional", 2)
+        if fallback in (to, me):
+            die("--fallback must name another professional than the target and yourself", 2)
+        try:
+            gate(fallback, "messaged")
+        except Fail:
+            audit_refused("not_allowed", fallback, task)
+            raise
     if to != "user":
         try:
             gate(to, "messaged")
@@ -1594,6 +1611,10 @@ def do_send(to, body, task=None, kind="task", reply_to=None, wake=False):
             deadline = min(deadline, parent["deadline"] - 20)
             if deadline < now() + 10:
                 die("no time left in the parent task's deadline", 4)
+        if fallback and fallback in base:
+            die("delegation loop refused: fallback %s is already in the chain %s" % (fallback, ">".join(chain)), 4)
+        if fallback and is_pro():
+            check_may_summon()  # a re-run may start the fallback: only a sender that may summon can name one
     if task and kind == "task":  # T042: the same task id with the same text to the same target is one task, not two
         for old in all_msgs():
             if old["from"] == me and old["to"] == to and old["task"] == task and old["kind"] == "task" and old["body"] == body:
@@ -1606,6 +1627,8 @@ def do_send(to, body, task=None, kind="task", reply_to=None, wake=False):
         die("task %s hit the message cap (%d)" % (task, c["task_msg_cap"]), 4)
     m = new_msg(me, to, task, kind, reply_to or me, chain, body, deadline, parent=parent["id"] if parent else None)
     m["project"] = str(project_root())
+    if fallback:
+        m["fallback"] = fallback
     if me == "user" and os.environ.get("CLAUDE_CODE_SESSION_ID"):
         m["origin_session"] = os.environ["CLAUDE_CODE_SESSION_ID"]
     audit_msg_created(m)
@@ -1675,6 +1698,180 @@ def wake_target(to, m, task):
     return "delivered" if cur["state"] in ("injected", "answered") else "queued"
 
 
+# --------------------------------------------------------------------------- failover (B2)
+
+BROKEN = ("gone", "stuck", "dialog", "limit")
+
+
+def max_attempts() -> int:
+    try:
+        return max(1, int(cfg().get("max_attempts", 2)))
+    except (TypeError, ValueError):
+        return 2
+
+
+def attempt_no(m) -> int:
+    return int(m.get("attempt") or 1)
+
+
+def attempt_group(m):
+    return m.get("attempt_root") or m["id"]
+
+
+def other_attempts(m):
+    g = attempt_group(m)
+    return [x for x in all_msgs() if x["kind"] == "task" and x["id"] != m["id"] and attempt_group(x) == g]
+
+
+def sender_may_summon(frm) -> bool:
+    if frm in ("user", "pro"):
+        return True
+    try:
+        p = next((x for x in personas(marketplace_dir()) if x["name"] == frm), None)
+    except Fail:
+        p = None
+    return p is None or p["may_summon"] is not False
+
+
+def attempt_text(m, why):
+    return "%s %s" % (m["to"], {"died": "died while handling it", "stuck": "was stuck and was stopped"}.get(why, "missed its deadline"))
+
+
+def try_failover(m, why) -> bool:
+    """Record the next attempt of task message m (store-first) and mark m superseded.  True when a re-run was recorded.
+
+    why: died | stuck | deadline.  The re-run goes to the sender's fallback when one was named, else to a fresh session
+    of the same professional.  Never more than max_attempts runs; the start and the sender's note follow in
+    start_reruns() (outside any session lock)."""
+    cap = max_attempts()
+    if m["kind"] != "task" or m.get("superseded_by") or attempt_no(m) >= cap or not sender_may_summon(m["from"]):
+        return False
+    try:
+        with lock("fo-" + attempt_group(m), 5):
+            m = get_msg(m["id"]) or m
+            if m["state"] not in ("queued", "injected") or m.get("superseded_by"):
+                return False
+            nxt = m.get("fallback") or m["to"]
+            deadline = now() + cfg()["deliver_deadline_s"]
+            par = get_msg(m["parent"]) if m.get("parent") else None
+            if par:
+                deadline = min(deadline, par["deadline"] - 20)
+                if deadline < now() + 10:
+                    return False  # no time left in the parent task: the usual failure path tells the sender
+            try:
+                gate(nxt, "messaged")
+            except Fail as e:
+                audit_refused("not_allowed", nxt, m["task"])
+                log("failover-refused", msg=m["id"], why=str(e))
+                return False
+            r = new_msg(m["from"], nxt, m["task"], "task", m["reply_to"], list(m["chain"][:-1]) + [nxt], m["body"], deadline, parent=m.get("parent"))
+            r.update(attempt=attempt_no(m) + 1, retry_of=m["id"], attempt_root=attempt_group(m), fo_via=m["to"], project=m.get("project", ""),
+                     fo_start=True, fo_fresh=nxt == m["to"], fo_why=attempt_text(m, why))
+            for k in ("fallback", "origin_session"):
+                if m.get(k):
+                    r[k] = m[k]
+            r["session"] = planned_for(nxt, r["project"])
+            save_msg(r)  # store-first: the re-run exists and is queued before the failed attempt is closed
+            queue_add(r["session"], r)
+            audit_msg_created(r)
+            m["state"], m["superseded_by"] = "failed", r["id"]
+            m["fail_reason"] = "%s; re-run as %s (attempt %d)" % ("deadline missed" if why == "deadline" else "recipient " + why, r["id"], r["attempt"])
+            save_msg(m)
+            audit_msg_failed(m, "deadline_missed" if why == "deadline" else "recipient_died")
+            log("failover", msg=m["id"], rerun=r["id"], to=nxt, attempt=r["attempt"])
+            return True
+    except Fail:
+        return False
+
+
+def fail_last_attempt(m, why) -> bool:
+    """No attempt left (failover on): the task fails with one note.  False when failover is off (max_attempts 1) or the
+    task was not re-run for another reason (sender may not summon, no time left): the 0.4.0 handling applies then."""
+    if max_attempts() <= 1 or m.get("superseded_by") or attempt_no(m) < max_attempts():
+        return False
+    m = get_msg(m["id"]) or m
+    m["state"], m["fail_reason"] = "failed", "recipient %s; no attempts left" % why
+    save_msg(m)
+    audit_msg_failed(m, "recipient_died")
+    notify(m["from"], m["task"], "task %s: attempt %d of %d failed (%s); no attempts left. Ask again if you still need it." % (
+        m["task"], attempt_no(m), max_attempts(), attempt_text(m, why)))
+    return True
+
+
+def planned_for(name, project):
+    try:
+        e = gate(name, "summoned")
+    except Fail:
+        return "pro-" + name
+    if e["kind"] == "folder":
+        return "pro-" + name
+    p = Path(project) if project and os.path.isdir(project) else project_root()
+    return session_name(name, start_scope(None, p), p)
+
+
+def start_reruns():
+    """Start the target of each recorded re-run (a fresh session for the same professional), then tell the sender once.
+
+    The start is a separate `pros summon` process with a clean environment: it takes the session lock itself, the caps and
+    the allowlist apply as for any summon, and a start that fails keeps the re-run queued (for the next start or its deadline)."""
+    for r in all_msgs():
+        if not r.get("fo_start") or r["kind"] != "task":
+            continue
+        try:
+            with lock("fo-" + attempt_group(r), 0):
+                r = get_msg(r["id"]) or r
+                if not r.get("fo_start"):
+                    continue
+                r["fo_start"] = False
+                save_msg(r)
+                problem = rerun_start(r) if r["state"] == "queued" else ""
+        except Fail:
+            continue
+        where = ("a fresh %s session" % r["to"]) if r.get("fo_fresh") else r["to"]
+        text = "task %s: attempt %d of %d failed (%s); re-running it on %s as attempt %d (%s)." % (
+            r["task"], r["attempt"] - 1, max_attempts(), r.get("fo_why", "it failed"), where, r["attempt"], r["id"])
+        if problem:
+            text += " %s could not start yet (%s); the task stays queued until it starts or its deadline passes." % (r["to"], problem)
+        notify(r["from"], r["task"], text, progress=True)
+
+
+def rerun_start(r) -> str:
+    """'' when the target runs and the re-run is queued for it, else the reason the start failed."""
+    rec, problem = find_session(r["to"], r.get("project")), ""
+    if not rec:
+        env = dict(clean_env(), PRO_NO_AUTO="1")
+        cwd = r["project"] if r.get("project") and os.path.isdir(r["project"]) else str(pro_home())
+        args = [sys.executable, os.path.realpath(__file__), "summon", r["to"]] + (["--fresh"] if r.get("fo_fresh") else [])
+        try:
+            p = subprocess.run(args, env=env, cwd=cwd, capture_output=True, text=True, timeout=3 * cfg()["ready_timeout_s"] + 60)
+            if p.returncode:
+                lines = [x for x in p.stderr.strip().splitlines() if x.strip()]
+                problem = (lines[-1] if lines else "exit %d" % p.returncode).replace("pros: ", "", 1)
+                if p.returncode == 4:
+                    audit_refused("cap_live" if "live cap" in problem else ("cap_hourly" if "budget" in problem else "not_allowed"), r["to"], r["task"])
+        except (OSError, subprocess.TimeoutExpired) as e:
+            problem = "start failed: %s" % type(e).__name__
+        rec = find_session(r["to"], r.get("project"))
+    if rec:
+        cur = get_msg(r["id"]) or r
+        if cur["state"] == "queued" and cur.get("session") != rec["session"]:
+            cur["session"] = rec["session"]
+            save_msg(cur)
+            queue_add(rec["session"], cur)
+        with contextlib.suppress(Fail), lock(rec["session"], 5):
+            deliver_next(rec)
+    return problem
+
+
+def close_other_attempts(m, reply_id):
+    """The first answer of a task wins: other attempts still open are closed (their later replies are stored, not delivered)."""
+    for x in other_attempts(m):
+        if x["state"] in ("queued", "injected"):
+            x["state"], x["fail_reason"], x["fo_start"] = "failed", "answered by another attempt (%s)" % reply_id, False
+            save_msg(x)
+            audit_msg_failed(x, "other")
+
+
 def read_text_arg(t):
     if t == "-":
         return sys.stdin.read()
@@ -1713,6 +1910,8 @@ def pump_inner():
                     dead = [m for m in all_msgs() if m["to"] == rec["name"] and m["kind"] == "task" and m["state"] == "injected"]
                     drop_session(rec, "died")
                     for m in dead:
+                        if try_failover(m, "died") or fail_last_attempt(m, "died"):
+                            continue  # B2: re-run recorded (the start step tells the sender), or no attempt left
                         notify(m["from"], m["task"], "%s died while handling task %s; summon it again to resend (marked possible duplicate)" % (rec["name"], m["task"]))
                     continue
                 st = st_get(s)
@@ -1728,6 +1927,8 @@ def pump_inner():
     for m in all_msgs():
         if m["kind"] == "task" and m["state"] in ("queued", "injected") and now() > m["deadline"] and not m.get("overdue"):
             rec = find_session(m["to"])
+            if deadline_failover(m, rec):
+                continue
             m["overdue"] = True
             was_queued = m["state"] == "queued"
             if was_queued:
@@ -1737,7 +1938,8 @@ def pump_inner():
             if was_queued:
                 audit_msg_failed(m, "deadline_before_delivery")
             why = live_state(rec)[0] if rec else "gone"
-            notify(m["from"], m["task"], "timeout: task %s to %s got no answer by its deadline (target state: %s)" % (m["task"], m["to"], why))
+            last = " (attempt %d of %d; no attempts left)" % (attempt_no(m), max_attempts()) if max_attempts() > 1 and attempt_no(m) > 1 else ""
+            notify(m["from"], m["task"], "timeout: task %s to %s got no answer by its deadline (target state: %s)%s" % (m["task"], m["to"], why, last))
     for m in all_msgs():
         if m["kind"] in ("reply", "note") and m["state"] == "queued" and now() > m["deadline"]:
             m["state"], m["fail_reason"] = "failed", "expired unread"
@@ -1745,11 +1947,30 @@ def pump_inner():
             audit_msg_failed(m, "expired_unread")
             with contextlib.suppress(OSError):
                 os.unlink(run_dir("inbox", m["id"]))
+    start_reruns()
     stamp = run_dir("reap.stamp")
     if not stamp.exists() or now() - os.path.getmtime(stamp) > 60:
         ensure(stamp.parent)
         stamp.write_text(str(now()))
         reap()
+
+
+def deadline_failover(m, rec) -> bool:
+    """B2 at the deadline: re-run when the target is broken (gone, stuck, dialog, limit) or the sender named a fallback.
+    A target that is merely busy and has no fallback keeps 0.4.0's timeout note and late reply (a re-run would discard
+    work in progress).  A broken target of a same-professional re-run is stopped first, so the re-run gets a fresh session."""
+    state = live_state(rec)[0] if rec else "gone"
+    fb = m.get("fallback")
+    if m["state"] == "queued" and not fb:
+        return False
+    if not (fb or state in BROKEN):
+        return False
+    if not try_failover(m, "deadline"):
+        return False
+    if rec and not fb and state != "gone":
+        with contextlib.suppress(Fail), lock(rec["session"], 5):
+            stop_session(rec, "stuck", rerun=True)
+    return True
 
 
 def auto_pump():
@@ -1761,10 +1982,12 @@ def auto_pump():
         log("pump-error", err=str(e))
 
 
-def stop_session(rec, why="stopped"):
+def stop_session(rec, why="stopped", rerun=False):
+    """rerun=True (B2): pros stops a broken session to re-run its work on a fresh one; its queue is kept for that session
+    and its other open tasks fail over too."""
     s = rec["session"]
     tmux("kill-session", "-t", "=" + s)
-    keep = why == "failed-to-start"  # store-first (B3): a failed start keeps its queue for the next start (or the deadline)
+    keep = why == "failed-to-start" or rerun  # store-first (B3): a failed start keeps its queue for the next start (or the deadline)
     for m in [] if keep else all_msgs():
         if m["to"] == rec["name"] and m["state"] == "queued" and m.get("session") in (s, None):
             m["state"], m["fail_reason"] = "failed", "recipient stopped"
@@ -1773,6 +1996,8 @@ def stop_session(rec, why="stopped"):
             notify(m["from"], m["task"], "%s was stopped; task %s was not delivered" % (rec["name"], m["task"]))
     for m in all_msgs():
         if m["to"] == rec["name"] and m["kind"] == "task" and m["state"] == "injected":
+            if rerun and (try_failover(m, "stuck") or fail_last_attempt(m, "stuck")):
+                continue
             m["state"], m["fail_reason"] = "failed", "recipient %s" % why
             save_msg(m)
             audit_msg_failed(m, "recipient_stopped")
@@ -1908,11 +2133,18 @@ def auto_reply(s, final):
         if orig.get("origin_session"):
             m["origin_session"] = orig["origin_session"]
         audit_msg_created(m)
-        status = post(m) if (target == "user" or find_session(target)) else (save_msg(m) or "stored")
+        won = next((x for x in other_attempts(orig) if x["state"] == "answered"), None)
+        if won:  # B2: answered by another attempt already: stored, not delivered
+            m["suppressed"], m["state"] = "task already answered by attempt %d (%s)" % (attempt_no(won), won["id"]), "answered"
+            status = save_msg(m) or "stored"
+        else:
+            status = post(m) if (target == "user" or find_session(target)) else (save_msg(m) or "stored")
         orig = get_msg(orig["id"]) or orig
         orig["state"], orig["answered_at"], orig["answered_by"] = "answered", now(), "auto-reply"
         save_msg(orig)
         audit_emit("msg_answered", {"answered_by": "auto-reply", "reply_msg": m["id"]}, msg=orig["id"], pro=audit_pro(orig["to"]))
+        if not won:
+            close_other_attempts(orig, m["id"])
         log("auto-reply", task=orig["task"], to=target, status=status)
     except Exception as e:  # noqa: BLE001
         log("auto-reply-error", err=str(e))
@@ -2683,8 +2915,9 @@ def resend_unanswered(rec):
 # --------------------------------------------------------------------------- send / read / reply / ask / wait
 
 def cmd_send(a):
-    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind, wake=not a.no_wake)
-    print("sent %s task=%s to=%s status=%s chain=%s" % (m["id"], m["task"], m["to"], status, ">".join(m["chain"])))
+    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind, wake=not a.no_wake, fallback=a.fallback)
+    fb = " fallback=%s" % m["fallback"] if m.get("fallback") else ""
+    print("sent %s task=%s to=%s status=%s chain=%s%s" % (m["id"], m["task"], m["to"], status, ">".join(m["chain"]), fb))
     if m["kind"] == "task":
         print("the answer arrives as a message; or: pros wait %s" % m["task"])
     return 0
@@ -2732,7 +2965,12 @@ def cmd_reply(a):
     if orig.get("origin_session"):
         m["origin_session"] = orig["origin_session"]
     audit_msg_created(m)
-    if target != "user" and not find_session(target):
+    won = next((x for x in other_attempts(orig) if x["state"] == "answered"), None)
+    if won:  # B2: another attempt of this task already answered it; this reply is stored (never dropped), not delivered
+        m["suppressed"], m["state"] = "task already answered by attempt %d (%s)" % (attempt_no(won), won["id"]), "answered"
+        save_msg(m)
+        status = "stored, not delivered (%s)" % m["suppressed"]
+    elif target != "user" and not find_session(target):
         save_msg(m)  # the asker's own wait still finds it; pasting into nobody is pointless
         status = "stored (asker %s is not running)" % target
     else:
@@ -2741,6 +2979,8 @@ def cmd_reply(a):
     orig["state"], orig["answered_at"] = "answered", now()
     save_msg(orig)
     audit_emit("msg_answered", {"answered_by": "reply", "reply_msg": m["id"]}, msg=orig["id"], pro=audit_pro(orig["to"]))
+    if not won:
+        close_other_attempts(orig, m["id"])
     print("replied %s task=%s to=%s status=%s" % (m["id"], a.task, target, status))
     return 0
 
@@ -2752,7 +2992,8 @@ def reply_for(me, task):
     ms = all_msgs()
     asks = [m for m in ms if m["from"] == me and m["task"] == task and m["kind"] == "task"]
     since = asks[-1]["created"] if asks else 0
-    got = [m for m in ms if m["to"] == me and m["task"] == task and m["kind"] in ("reply", "note") and m["created"] >= since]
+    got = [m for m in ms if m["to"] == me and m["task"] == task and m["kind"] in ("reply", "note") and m["created"] >= since
+           and not m.get("progress") and not m.get("suppressed")]  # a failover note is progress, not an answer (B2)
     real = [m for m in got if m["from"] != "pro"]
     return (real or got or [None])[-1]
 
@@ -2805,9 +3046,13 @@ def wait_for_inner(task, timeout, me=None, register=True):
                 last_pump = now()
                 with contextlib.suppress(Exception), audit_as(observer="wait"):
                     pump()
+                cur = [m for m in all_msgs() if m["from"] == me and m["task"] == task and m["kind"] == "task"]
+                target = cur[-1]["to"] if cur else target  # a re-run on a fallback moves the wait to it (B2)
                 if target:
                     rec = find_session(target)
                     if not rec:
+                        if reply_for(me, task):
+                            continue  # the pump just stored the answer or the final note: return that, not "gone"
                         return 5, None
                     state, _ = live_state(rec)
                     if state in ("limit", "stuck"):  # a stuck target ends the wait (exit 5), never held to the timeout
@@ -2862,7 +3107,7 @@ def cmd_ask(a):
                     audit_refused("cap_live" if "live cap" in str(e) else "cap_hourly", a.to, a.task)
                 raise
     with waiting(me, a.to, "?", now() + wait):  # registered before sending so a crossing ask is refused
-        m, status = do_send(a.to, read_text_arg(a.text), a.task, "task")
+        m, status = do_send(a.to, read_text_arg(a.text), a.task, "task", fallback=a.fallback)
         print("sent %s task=%s status=%s" % (m["id"], m["task"], status), file=sys.stderr)
         code, r = wait_for(m["task"], wait, register=False)
     return finish_wait(code, r, m["task"])
@@ -3411,6 +3656,7 @@ def build_parser():
     sp.add_argument("--task")
     sp.add_argument("--kind", default="task", choices=["task", "reply", "note"])
     sp.add_argument("--no-wake", action="store_true", help="refuse (exit 5) instead of starting a professional that is not running")
+    sp.add_argument("--fallback", help="if the target dies or misses the deadline, re-run the task on this professional")
     sp.add_argument("--json", action="store_true")
     sp = add("read", cmd_read)
     sp.add_argument("id")
@@ -3423,6 +3669,7 @@ def build_parser():
     sp.add_argument("text")
     sp.add_argument("--task", help="your own task id; asking again with the same id and text returns the stored answer")
     sp.add_argument("--wait", type=float, default=90)
+    sp.add_argument("--fallback", help="if the target dies or misses the deadline, re-run the task on this professional")
     sp.add_argument("--json", action="store_true")
     sp = add("wait", cmd_wait)
     sp.add_argument("task")
