@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.1
+
+- Config switches `wake_on_send` and `failover` (both default true; set false in `$PRO_HOME/config.json`). `wake_on_send: false` makes `pros send` and `pros ask` refuse (exit 5) when the target is not running, as before 0.4.0. `failover: false` turns the 0.5.0 re-run off (same as `max_attempts: 1`).
+- A failover re-run now tells the new session: "previous attempt failed: check what is already done before repeating side effects".
+- README and this file: "Upgrading from 0.3.x".
+
 ## 0.5.0
 
 - Failover: when the professional holding a task dies, or the task passes its deadline while the target is gone, stuck, in a dialog or at a usage limit, `pros` re-runs the task on a fresh session of the same professional (the broken one is stopped first), or on a fallback the sender named with `pros send|ask --fallback <name>`. With a fallback, a deadline miss re-runs even when the target is only busy; without one, a busy target keeps the timeout note and the late reply.

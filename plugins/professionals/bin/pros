@@ -47,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -62,6 +62,7 @@ DEFAULTS = {
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
     "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
     "publish_guard": "", "resume_max_days": 14, "max_resends": 1, "max_attempts": 2,
+    "wake_on_send": True, "failover": True,
 }
 DEFAULT_DENY = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/.netrc", "~/.claude/.credentials.json"]
 
@@ -1300,6 +1301,8 @@ def render(m, full=False) -> str:
     lines = [header(m)]
     if m.get("dup"):
         lines.append("(possible duplicate: this id may already have been acted on before a restart; check before acting)")
+    if int(m.get("attempt") or 1) > 1:
+        lines.append("(previous attempt failed: check what is already done before repeating side effects)")
     if not full and n > POINTER_BYTES:
         lines.append("Long message (%d bytes). Read it with: pros read %s" % (n, m["id"]))
     else:
@@ -1704,6 +1707,8 @@ BROKEN = ("gone", "stuck", "dialog", "limit")
 
 
 def max_attempts() -> int:
+    if cfg().get("failover") is False:  # 0.5.1 switch: off = the 0.4.0 behaviour (one attempt)
+        return 1
     try:
         return max(1, int(cfg().get("max_attempts", 2)))
     except (TypeError, ValueError):
@@ -2915,7 +2920,7 @@ def resend_unanswered(rec):
 # --------------------------------------------------------------------------- send / read / reply / ask / wait
 
 def cmd_send(a):
-    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind, wake=not a.no_wake, fallback=a.fallback)
+    m, status = do_send(a.to, read_text_arg(a.text), a.task, a.kind, wake=not a.no_wake and cfg().get("wake_on_send") is not False, fallback=a.fallback)
     fb = " fallback=%s" % m["fallback"] if m.get("fallback") else ""
     print("sent %s task=%s to=%s status=%s chain=%s%s" % (m["id"], m["task"], m["to"], status, ">".join(m["chain"]), fb))
     if m["kind"] == "task":
@@ -3097,6 +3102,9 @@ def cmd_ask(a):
     if a.to not in ("user", me):
         check_name(a.to, "recipient")
         gate(a.to, "messaged")  # allowlisted professionals only; anything else is refused here
+        if not find_session(a.to) and cfg().get("wake_on_send") is False:
+            audit_refused("no_target", a.to, a.task)
+            die("%s is not running; summon it first: pros summon %s (wake_on_send is off)" % (a.to, a.to), 5)
         if not find_session(a.to):
             print("%s is not running; summoning it" % a.to, file=sys.stderr)
             try:
