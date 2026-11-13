@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.5.4
+
+Docs and version only; no code change. Task 311: one live session per professional.
+
+- Decision: not adding `max_sessions` (N sessions per name). The registry, queue, `pros wait`, audit trace and the `max_live` cap are all keyed by one session per name, so N sessions is far more than a small change and needs its own security review (see `docs/design.md`). Default behaviour is unchanged.
+- Documented the supported ways to batch: for parallel work name several professionals (register the same folder under other names) and send to each; for a serial batch where each item needs a clean context, `pros send|ask --fresh` per item (an idle session is replaced; a busy one is refused with exit 5, so wait for the answer, then send the next). README section "Batches and parallel work".
+- Test: `tests/test_v054.py` keeps that README section and the design note in place.
+
 ## 0.5.3
 
 Docs and version only; no code change.
