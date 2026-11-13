@@ -208,6 +208,39 @@
     "webhooks"
    ],
    "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Access researcher: finds which official, permitted ways exist to read a platform's content and what each costs or forbids.",
+   "name": "pro-access-researcher",
+   "source": "./plugins/pro-access-researcher",
+   "tags": [
+    "research",
+    "platforms"
+   ],
+   "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Source scout: finds and vets public sources for a topic, with a viewpoint and a trial question for each.",
+   "name": "pro-source-scout",
+   "source": "./plugins/pro-source-scout",
+   "tags": [
+    "research",
+    "sources"
+   ],
+   "version": "0.1.0"
+  },
+  {
+   "category": "domain",
+   "description": "Editorial investigator: checks whether a claim or trend in collected items holds, with sources and a verdict.",
+   "name": "pro-editorial-investigator",
+   "source": "./plugins/pro-editorial-investigator",
+   "tags": [
+    "research",
+    "fact-check"
+   ],
+   "version": "0.1.0"
   }
  ]
 }
