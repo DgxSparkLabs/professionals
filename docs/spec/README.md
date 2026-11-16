@@ -5,5 +5,6 @@ The public specification of `professionals`, version 1 (marketplace professional
 - [spec.md](spec.md): idea, user stories, requirements, message protocol, safety model, entry states, test map.
 - [audit.md](audit.md): audit, observability and evaluation (first release in 0.3.0); operations in [../audit-operations.md](../audit-operations.md).
 - [audit/](audit/events.md): the v1 contracts: [events](audit/events.md), [query](audit/query.md), [metrics](audit/metrics.md), [privacy](audit/privacy.md), [budgets](audit/budgets.md), machine-readable schemas in `audit/schemas/`.
+- [messaging.md](messaging.md): the five messaging-app professionals (WhatsApp, Telegram, LinkedIn, Instagram, Facebook Messenger): what each covers, which account a later study may use, and what stays forbidden. Paper only.
 
 Contributors: change behaviour in `plugins/professionals/bin/pros`, update this sheet in the same pull request, and add or extend a test in `tests/`.
