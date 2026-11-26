@@ -127,7 +127,7 @@ class AddRefresh(ProTestCase):
         d = self.make_folder("rf")
         self.ok("add", d, "--allow", "Bash(go test*)")
         self.ok("add", d, "--refresh", "--allow", "Bash(make *)")
-        self.assertEqual(self.entry("rf")["allow"], ["Bash(go test*)", "Bash(make *)"])
+        self.assertEqual(self.entry("rf")["allow"], ["Bash(make *)"])  # 0.8.2: a re-add with --allow sets the list (it merged before)
         self.ok("add", d, "--refresh", "--mode", "acceptEdits")
         self.assertEqual(self.entry("rf")["mode"], "acceptEdits")
         self.config({"default_mode": "dontAsk"})

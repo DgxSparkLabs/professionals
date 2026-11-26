@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.8.2
+
+Unblock restarts keep the run, and automatic unblock never widens past a script.
+
+- An unblock restart (automatic or `pros unblock`) keeps the model, thinking and harness the live session was summoned with. Before, it passed no model, so the entry, persona or config model won (seen live: a `--model claude-sonnet-5-5` professional came back on opus).
+- `auto_unblock` names the script for an interpreter call (`Bash(python3 tools/check.py *)`, not `Bash(python3 *)`) and never adds a too-wide rule by itself: bare `Bash` (a call that starts with `$(...)` or a path-less word) or a runner with no script (`python3 -c ...`, `bash`). Those denials get the usual note with the `pros unblock --allow` line, and the user decides. Rules already on an entry are not touched.
+- `pros team --json`: a joined (ad hoc) session's `waiting` row keeps its `task`, as 0.8.1 did for professionals (found by the Pi/Grok review trial).
+- Every other start pros makes by itself keeps the asked model and thinking too: a wake on send after the session died or was reaped, a re-run, `pros summon` of a dead one (history rows carry `asked_model`/`asked_thinking`). `pros stop`/`disable` resets to the defaults; an explicit `--model` wins.
+- Allow ceiling: a folder added with `--allow` rules keeps them as its ceiling; auto-unblock adds nothing there (the note says so) until the user runs `pros unblock`. A module run gets `Bash(python3 -m mod *)`. Rules pros adds are also listed in the entry's `auto_allow`.
+- Re-add: `pros add <dir> --allow ...` sets the allow list to the rules given (before: merged into the old list, so a wide auto rule survived until remove + add); `--allow` or `--refresh` drops the rules auto-unblock added, unless `--keep-auto-rules`. The output lists the rules and what was dropped. `tests/test_v060.py` `test_refresh_updates_allow_list` now expects the set list instead of the merged one (it asserted the old merge).
+- A re-add of a changed folder without `--refresh` printed `updated` (or `nothing changed`) and left it `changed`; it now says `NAME is still changed ... pros add DIR --refresh`.
+- Fix: a denial seen while an earlier auto-unblock restart still held its lock was dropped (no rule, no note); the pump now retries it on a later pass.
+- Guard mark: `pros team` and `pros list` show `guard` (`pros`, `paths`, `none`, `unknown`); a Pi professional on a `cursor/` model (harness field `unguarded_models`) is `guard: none`, because Cursor's agent runs its tools where the pros guard never sees them. `pros add`/`enable` warn. No other behaviour change.
+- Docs: the harness trial table (`docs/harness-trials.md`, card 1589).
+- Tests: `tests/test_v082.py`.
+
 ## 0.8.1
 
 Delivery cap without the pump wait (spec 064 T113) and no reply noise from a waiting professional.

@@ -44,7 +44,7 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros validate <name>` | Check a definition before use |
 | `pros publish <name>` | Validate, commit, push or open a pull request |
 | `pros doctor [--link]` | Check tmux, claude, python3 and the registry; `--link` puts `pros` on your PATH |
-| `pros add <dir> [--name N] [--allow R] [--mode M] [--model M] [--harness H] [--thinking T] [--auto-unblock on\|off] [--refresh]` | User only: register a folder as a professional; on a registered folder these flags update its entry |
+| `pros add <dir> [--name N] [--allow R] [--mode M] [--model M] [--harness H] [--thinking T] [--auto-unblock on\|off] [--refresh] [--keep-auto-rules]` | User only: register a folder as a professional; on a registered folder these flags update its entry |
 | `pros unblock <name> [--allow RULE]` | User only: add an allow rule to a professional and restart it with its history; protected paths never (exit 4) |
 | `pros remove`, `enable [--mode M]`, `disable`, `keep [--off]`, `rate <name> good\|bad` | User only: manage the list (never from a professional session) |
 | `pros audit status\|summary\|trace\|explain\|verdict\|report\|export\|serve` | User only: the local audit of tasks, delegation, usage and verdicts (docs/audit-operations.md). A professional session is refused (exit 4); do not try it |

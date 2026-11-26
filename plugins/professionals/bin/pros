@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.1"
+VERSION = "0.8.2"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -84,14 +84,14 @@ SAFE_BASH_SANDBOXED = ["Bash(ls*)", "Bash(cat *)", "Bash(grep *)", "Bash(rg *)",
 # or paste.  proto "pi-rpc": `pros bridge` in tmux drives the program over Pi's JSONL RPC protocol (no Stop hook there).
 HARNESS_PROTOS = ("claude", "pi-rpc")
 HARNESS_FIELDS = ("proto", "bin", "path_add", "args", "env", "model_flag", "thinking_flag", "session_flag", "fork_flag", "session_dir_flag",
-                  "prompt_flag", "extension_flag", "name_flag", "modes", "blocked_models", "note")
+                  "prompt_flag", "extension_flag", "name_flag", "modes", "blocked_models", "unguarded_models", "note")
 BUILTIN_HARNESSES = {
     "claude": {"proto": "claude", "bin": "claude", "blocked_models": True, "thinking_flag": "--effort",
                "note": "Claude Code in tmux; messages by the Stop hook or paste"},
     "pi": {"proto": "pi-rpc", "bin": "~/.local/node/bin/pi", "path_add": ["~/.local/node/bin"], "args": ["--mode", "rpc"],
            "model_flag": "--model", "thinking_flag": "--thinking", "session_flag": "--session-id", "fork_flag": "--fork",
            "session_dir_flag": "--session-dir", "prompt_flag": "--append-system-prompt", "extension_flag": "-e", "name_flag": "--name",
-           "modes": {"plan": ["--tools", "read,grep,find,ls"]}, "blocked_models": False,
+           "modes": {"plan": ["--tools", "read,grep,find,ls"]}, "blocked_models": False, "unguarded_models": ["cursor/"],
            "note": "Pi over its RPC protocol (pros bridge in tmux); no --model: the default model of your Pi config"},
 }
 THINK_RE = re.compile(r"^[a-z]{1,12}$")
@@ -807,11 +807,12 @@ def hist_sessions(name) -> list:
     for r in hist_rows(name):
         ev, sid = r.get("ev"), r.get("id")
         if ev == "start" and sid in sess:  # a resume continues the same session id: another run of it
-            sess[sid].update(ended=None, reason="", run_started=r.get("t", 0))
+            sess[sid].update(ended=None, reason="", run_started=r.get("t", 0), asked=(r.get("asked_model", ""), r.get("asked_thinking", "")))
         elif ev == "start":
             sess[sid] = {"id": sid, "workdir": r.get("workdir", ""), "started": r.get("t", 0), "ended": None, "reason": "",
                          "answered": 0, "failed": 0, "timeout": 0, "rating": "", "note": "", "resumed_from": r.get("resumed_from"),
-                         "forked_from": r.get("forked_from"), "actual": "", "run_started": r.get("t", 0), "harness": r.get("harness") or "claude"}
+                         "forked_from": r.get("forked_from"), "actual": "", "run_started": r.get("t", 0), "harness": r.get("harness") or "claude",
+                         "asked": (r.get("asked_model", ""), r.get("asked_thinking", ""))}
             order.append(sid)
         elif sid in sess and ev == "end":
             x = sess[sid]
@@ -874,6 +875,16 @@ def hist_end(rec, why):
     counts = task_counts(rec["entry"], open_[0]["run_started"], now())
     hist_append(rec["entry"], dict({"ev": "end", "id": sid, "reason": reason}, **counts))
     audit_emit("session_end", dict({"reason": AUDIT_END.get(reason, "unknown")}, **counts), actor="system", pro=audit_pro(rec["entry"]), run=rec.get("run_id"), session=audit_sid(actual or sid))
+
+
+def carried_choice(name, workdir, harness) -> tuple:
+    """0.8.2: (model, thinking) the summoner asked for on the last run of this professional (same folder, same harness), kept
+    when pros starts it again by itself (unblock restart, a wake after it died or was reaped, a re-run).  A run the user
+    stopped (pros stop, disable) resets to the defaults."""
+    runs = [x for x in hist_sessions(name) if x["workdir"] == str(workdir) and x["harness"] == harness]
+    if not runs or runs[-1]["reason"] in ("stopped", "disabled"):
+        return "", ""
+    return runs[-1].get("asked") or ("", "")
 
 
 def hist_reconcile(name, live_ids):
@@ -1194,6 +1205,33 @@ def harness_of(e, override=None, c=None) -> str:
     return override or (e or {}).get("harness") or (c or cfg()).get("default_harness") or "claude"
 
 
+GUARD_NOTE = {"none": "its tools run in the model provider's own agent (Cursor), outside the pros guard: no allowlist, no protected-path block",
+              "unknown": "no model set: the harness's own default provider decides; if that is Cursor, its tools run outside the pros guard"}
+
+
+def guard_of(hname, model, c=None) -> str:
+    """0.8.2: who checks this run's tool calls.  pros = Claude Code with the pros settings (allowlist, protected paths);
+    paths = Pi's own tools with the pros guard extension (protected paths only); none = a provider whose agent runs its own
+    tools (unguarded_models prefixes, e.g. cursor/), the guard never sees them; unknown = no model, the harness default decides."""
+    try:
+        h = get_harness(hname, c)
+    except Fail:
+        return "unknown"
+    if h["proto"] == "claude":
+        return "pros"
+    pre = [str(x) for x in h.get("unguarded_models") or []]
+    if not model:
+        return "unknown" if pre else "paths"
+    return "none" if any(model.startswith(x) for x in pre) else "paths"
+
+
+def guard_warning(name, e):
+    """pros add / enable: say it when a professional's tool calls run outside the pros guard; nothing else changes."""
+    g = guard_of(harness_of(e), (e or {}).get("model") or "")
+    if g in GUARD_NOTE:
+        print("WARNING: %s guard: %s; %s." % (name, g, GUARD_NOTE[g]), file=sys.stderr)
+
+
 def harness_bin(h) -> list:
     if h["proto"] == "claude":
         return claude_cmd()
@@ -1288,12 +1326,36 @@ def protected_hit(text, e=None) -> str:
     return ""
 
 
+RUNNERS = {"python", "python2", "python3", "node", "bash", "sh", "zsh", "dash", "fish", "perl", "ruby", "php", "lua", "env", "sudo", "doas",
+           "xargs", "eval", "exec", "nohup", "timeout", "nice", "ionice", "uv", "uvx", "npx", "bun", "deno", "pwsh", "source", ".", "command"}
+
+
+def is_runner(word) -> bool:
+    """A command that runs whatever its arguments say: `Bash(python3 *)` would allow any code at all."""
+    return word in RUNNERS or bool(re.match(r"^(python|pypy)[0-9.]*$", word))
+
+
 def suggest_rule(tool, target) -> str:
-    """The narrowest allow rule that would have let this call through."""
+    """The narrowest allow rule that would have let this call through.  0.8.2: for an interpreter or wrapper the rule
+    names the script too (`Bash(python3 tools/check.py *)`), never `Bash(python3 *)` when a script is given."""
     if tool == "Bash" and target.strip():
-        word = re.split(r"[\s;|&<>]", target.strip(), 1)[0]
-        return "Bash(%s *)" % word if word and re.match(r"^[\w./-]+$", word) else "Bash"
+        words = re.split(r"[\s;|&<>]+", target.strip())
+        word = words[0]
+        if not (word and re.match(r"^[\w./-]+$", word)):
+            return "Bash"
+        nxt = words[1] if len(words) > 1 else ""
+        if is_runner(word) and nxt and re.match(r"^[\w./][\w./-]*$", nxt):
+            return "Bash(%s %s *)" % (word, nxt)
+        if is_runner(word) and nxt == "-m" and len(words) > 2 and re.match(r"^[\w.]+$", words[2]):
+            return "Bash(%s -m %s *)" % (word, words[2])  # a module run names the module
+        return "Bash(%s *)" % word
     return tool
+
+
+def too_wide(rule) -> bool:
+    """A rule pros never adds by itself (auto-unblock): the whole Bash tool, or an interpreter/wrapper with no script."""
+    m = re.match(r"^Bash(?:\((\S+) \*\))?$", rule)
+    return bool(m) and (m.group(1) is None or is_runner(m.group(1)))
 
 
 def denial_report(name, rec, d, e=None) -> str:
@@ -1304,8 +1366,9 @@ def denial_report(name, rec, d, e=None) -> str:
         return ("%s was denied %s: %s. Blocked by the protected-path deny rule for %s (credentials, deny_paths or pros state). "
                 "This cannot be lifted, not even by pros unblock; give it the data another way." % (name, d["tool"], target, hit))
     rule = suggest_rule(d["tool"], d["target"])
-    return ("%s was denied %s: %s. Blocked by: no allow rule matches it in %s mode. Fix (user): %s unblock %s --allow '%s'" % (
-        name, d["tool"], target, rec.get("mode") or "this", pro_cmd(), name, rule))
+    why = " Its allow rules are the ceiling the user registered (pros add --allow); pros does not widen them." if (e or {}).get("allow_ceiling") else ""
+    return ("%s was denied %s: %s. Blocked by: no allow rule matches it in %s mode.%s Fix (user): %s unblock %s --allow '%s'" % (
+        name, d["tool"], target, rec.get("mode") or "this", why, pro_cmd(), name, rule))
 
 
 def check_denials(rec):
@@ -1366,8 +1429,10 @@ def auto_rule(rec, d, e) -> str:
     if not e or not auto_unblock_on(e) or protected_hit(d["target"], e) or protected_hit(d.get("text", ""), e):
         return ""
     rule = suggest_rule(d["tool"], d["target"])
-    if not RULE_RE.match(rule) or protected_hit(rule, e) or rule in (e.get("allow") or []):
-        return ""
+    if e.get("allow_ceiling"):
+        return ""  # 0.8.2: the user registered its allow rules (pros add --allow): only the user widens them
+    if not RULE_RE.match(rule) or protected_hit(rule, e) or rule in (e.get("allow") or []) or too_wide(rule):
+        return ""  # too wide (0.8.2): the user decides with pros unblock, after the usual note
     return rule
 
 
@@ -2438,6 +2503,10 @@ def pump_inner():
                     st_set(s, alerted="")
                 with contextlib.suppress(Exception):
                     check_denials(rec)
+                pend = st_get(s).get("auto_unblock_pending")
+                if pend and now() - pend.get("at", 0) > 3:  # 0.8.2: its process found the lock busy (a restart still running): retry
+                    st_set(s, auto_unblock_pending=dict(pend, at=now()))
+                    start_auto_unblock(s)
                 if state == "idle":
                     deliver_next(rec)
         except Fail:
@@ -3199,12 +3268,13 @@ def entry_views(tolerant=True) -> list:
             "last": ("%s (%s)" % ((last["actual"] or last["id"])[:8], last["reason"] or "open")) if last else "",
             "last_session": (last["actual"] or last["id"]) if last else "", "score": last["score"] if last else "",
             "description": sanitize_desc(e.get("description") or (per or {}).get("description", "")),
-            "tags": (per or {}).get("tags", []) if e.get("kind") != "folder" else [], "path": e.get("path", "")})
+            "tags": (per or {}).get("tags", []) if e.get("kind") != "folder" else [], "path": e.get("path", ""),
+            "guard": guard_of(harness_of(e), e.get("model") or "")})
     for name, per in sorted(market.items()):
         if name not in seen:
             rows.append({"name": name, "kind": "marketplace", "state": "available", "enabled": False, "keep": False, "live": "",
                          "last": "", "last_session": "", "score": "", "description": sanitize_desc(per["description"]),
-                         "tags": per["tags"], "path": ""})
+                         "tags": per["tags"], "path": "", "guard": ""})
     return rows
 
 
@@ -3213,6 +3283,9 @@ def print_view_table(rows):
         r["state"] += "*" if r["live"] else ""
     cols = ["name", "kind", "state", "keep", "live", "last", "score", "description"]
     fmt_table([dict(r, keep="keep" if r["keep"] else "", live=r.get("activity") or r["live"]) for r in rows], cols)
+    for r in rows:
+        if r.get("guard") in GUARD_NOTE:
+            print("! %s: guard: %s (%s)" % (r["name"], r["guard"], GUARD_NOTE[r["guard"]]))
 
 
 def registry_warning():
@@ -3342,16 +3415,24 @@ def cmd_add(a):
     except Fail:
         market = set()
 
+    dropped = []
+
     def edit(reg):
         same = [(n, e) for n, e in reg["entries"].items() if e.get("kind") == "folder" and e.get("path") == str(path)]
         if a.name:  # 0.7.1 (T200): a new --name is a second professional for the same folder, with its own sessions
             same = [(n, e) for n, e in same if n == a.name]
         for n, e in same[:1]:
-            if not (a.refresh or a.trust_code or a.allow or a.deny or a.mode is not None or a.model is not None
+            if not (a.refresh or a.trust_code or a.allow or a.deny or a.mode is not None or a.model is not None or a.keep_auto_rules
                     or a.harness is not None or a.thinking is not None or a.auto_unblock is not None):
                 return "same", n
-            if a.allow:  # 0.6.0: --allow/--deny/--mode update the entry (they were ignored for a registered folder)
-                e["allow"] = list(dict.fromkeys(list(e.get("allow", [])) + list(a.allow)))
+            if a.allow or a.refresh:  # 0.8.2: a re-add sets the list (before: merged); rules pros added itself go unless --keep-auto-rules
+                old, auto = list(e.get("allow", [])), [r for r in e.get("auto_allow", []) if r in e.get("allow", [])]
+                base = list(a.allow) if a.allow else [r for r in old if r not in auto]
+                e["allow"] = list(dict.fromkeys(base + (auto if a.keep_auto_rules else [])))
+                e["auto_allow"] = [r for r in auto if r in e["allow"]]
+                dropped[:] = [r for r in old if r not in e["allow"]]
+                if a.allow:
+                    e["allow_ceiling"] = True  # rules the user registered are the ceiling: auto-unblock adds nothing beside them
             if a.deny:
                 e["deny_paths"] = list(dict.fromkeys(list(e.get("deny_paths", DEFAULT_FOLDER_DENY)) + list(a.deny)))
             if a.mode is not None:
@@ -3375,7 +3456,7 @@ def cmd_add(a):
             "enabled": True, "keep": False, "added_at": now(), "added_by": "user", "trust_code": bool(a.trust_code),
             "pro_id": "p-" + hashlib.sha1(("folder:" + name).encode()).hexdigest()[:12],
             "description": sanitize_desc(a.desc) if a.desc else folder_description(path), "mode": a.mode or "",
-            "allow": list(a.allow or []), "deny_paths": DEFAULT_FOLDER_DENY + list(a.deny or []), "model": a.model or ""}
+            "allow": list(a.allow or []), "deny_paths": DEFAULT_FOLDER_DENY + list(a.deny or []), "model": a.model or "", "allow_ceiling": bool(a.allow)}
         set_harness_fields(reg["entries"][name], a)
         if a.auto_unblock is not None:
             reg["entries"][name]["auto_unblock"] = a.auto_unblock == "on"
@@ -3385,16 +3466,25 @@ def cmd_add(a):
         e2 = ((reg_read() or {}).get("entries") or {}).get(name) or {}
         audit_emit("registry_change", {"change": "added" if what == "added" else ("trusted" if a.trust_code else "revision_changed"), "origin": "folder", "revision": audit_revision(e2)},
                    pro=audit_pro(name, e2), pro_name=name)
+    e_now = ((reg_read() or {}).get("entries") or {}).get(name) or {}
+    still = ("%s is still changed: its files differ from the ones you reviewed, so summon refuses it; review them, then: pros add %s --refresh"
+             % (name, path)) if what in ("same", "updated") and entry_state(e_now) == "changed" else ""
     if what == "same":
         print("%s is already registered as %s; nothing changed (--refresh re-reads its files)" % (path, name))
+        print(still) if still else None
         return 0
     print("%s %s: folder %s" % (what, name, path))
+    if what != "added":
+        print("allow rules: %s%s" % (", ".join(e_now.get("allow", [])) or "-", "; dropped: " + ", ".join(dropped) if dropped else ""))
+    if still:
+        print(still)
     print("files read as instructions/settings: %s" % (", ".join(info["files"]) or "(none)"))
     if info["allow"]:
         print("permission allow rules in the folder: %s" % ", ".join(info["allow"]))
     if info["code"]:
         print("WARNING: this folder defines code that runs when Claude opens it: hooks=%s mcp=%s" % (",".join(info["hooks"]) or "-", ",".join(info["mcp"]) or "-"))
         print("  The trust dialog is NOT answered for you unless you re-run: pros add %s --refresh --trust-code" % path)
+    guard_warning(name, ((reg_read() or {}).get("entries") or {}).get(name))
     return 0
 
 
@@ -3468,6 +3558,7 @@ def cmd_enable(a):
             return "enabled, mode %s" % (a.mode or "(default %s)" % cfg()["default_mode"])
         return "enabled"
     print("%s: %s" % (name, reg_edit(edit)))
+    guard_warning(name, ((reg_read() or {}).get("entries") or {}).get(name))
     return 0
 
 
@@ -3572,7 +3663,8 @@ def restart_unblocked(name, rec):
     if rec.get("scope") == "project" and Path(rec.get("project", "")).is_dir():
         os.chdir(rec["project"])
     scope = None if rec.get("scope") == "folder" else rec.get("scope")
-    summon(name, scope, rec.get("mode") if rec.get("explicit_mode") else None, None, rec.get("allow_persona_tools", False))
+    summon(name, scope, rec.get("mode") if rec.get("explicit_mode") else None, None, rec.get("allow_persona_tools", False),
+           harness=rec.get("harness") or None)  # 0.8.2: model and thinking come back from the run it replaces (carried_choice)
 
 
 def cmd_auto_unblock(a):
@@ -3599,6 +3691,7 @@ def cmd_auto_unblock(a):
                 if rule in e.setdefault("allow", []):
                     return False
                 e["allow"].append(rule)
+                e.setdefault("auto_allow", []).append(rule)  # which rules pros added, for the user to review
                 return True
             if not reg_edit(edit):
                 return 0
@@ -4039,7 +4132,8 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
     write_json(run_dir("state", s + ".json"), dict({k: old[k] for k in ("denials_seen", "denials_keys") if k in old}, state="starting", last_activity=now(), blocks=0))
     with open(run_dir("summons.log"), "a") as f:
         f.write(json.dumps({"t": now(), "name": name}) + "\n")
-    row = {"ev": "start", "id": sid, "workdir": str(workdir), "entry": name, "run": rec["run_id"], "harness": harness}
+    row = {"ev": "start", "id": sid, "workdir": str(workdir), "entry": name, "run": rec["run_id"], "harness": harness,
+           "asked_model": model or "", "asked_thinking": thinking or ""}  # 0.8.2: what the summoner asked for, carried to a restart
     if plan[0] == "resume":
         row["resumed_from"] = sid
     if plan[0] == "fork":
@@ -4155,6 +4249,11 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
     mode = effective_mode(explicit_mode, c)
     hname = harness_of(e, harness, c)
     proto = get_harness(hname, c)["proto"]
+    if (model is None or thinking is None) and not fork:  # 0.8.2: a start pros makes by itself keeps what was asked for
+        cm, ct = carried_choice(name, workdir, hname)
+        with contextlib.suppress(Fail):
+            model = model or (cm and resolve_model(cm, e, persona, c, hname) and cm) or None  # one blocked since: the defaults
+        thinking = thinking or (ct if THINK_RE.match(ct or "") else "") or None
     resolve_model(model, e, persona, c, hname)  # refuse a blocked model before anything starts
     resolve_thinking(thinking, e, hname, c)
     with lock(s, c["ready_timeout_s"] + 30):  # one lock per entry covers decide -> record -> spawn (R-V2-4)
@@ -4518,6 +4617,7 @@ def cmd_team(a):
             reason = "turn over; %d command(s) it started still run (pid %s)" % (len(bg), ",".join(map(str, bg[:3])))
         rows.append({"name": rec["name"], "session": s, "scope": rec["scope"], "state": state, "reason": reason, "activity": act, "bg": len(bg),
                      "harness": rec.get("harness", "claude"), "model": rec.get("model") or st.get("pi_model") or "", "thinking": rec.get("thinking") or "",
+                     "guard": guard_of(rec.get("harness", "claude"), rec.get("model") or st.get("pi_model") or ""),
                      "task": st.get("task", "") if act in ("working", "waiting") else "", "summoner": rec.get("summoner", ""),
                      "age_s": int(now() - rec["started"]), "queued": queue_len(s), "denied": den,
                      "workdir": rec["workdir"], "agents_status": agents_status().get(s, "")})
@@ -4540,6 +4640,8 @@ def cmd_team(a):
     for r in rows:
         if r["reason"]:
             print("* %s: %s" % (r["name"], r["reason"]))
+        if r.get("guard") in GUARD_NOTE:
+            print("! %s: guard: %s (%s)" % (r["name"], r["guard"], GUARD_NOTE[r["guard"]]))
     print("state: working = in a turn; waiting = turn over but a command it started still runs (not free); ready = free for input")
     if any(r["denied"] for r in rows):
         print("denied: calls refused by permission rules; with auto_unblock on pros lifted them itself, else the summoner got the fix (user: pros unblock NAME). Protected paths stay denied.")
@@ -4609,8 +4711,8 @@ def adhoc_rows() -> list:
         hs = st.get("state") or "idle"
         bg = bg_commands(r["claude_pid"]) if hs != "busy" else []
         rows.append({"name": r["name"], "session": key, "scope": "adhoc", "state": "busy" if hs == "busy" else "idle", "reason": "",
-                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "",
-                     "task": st.get("task", "") if hs == "busy" else "", "summoner": "-", "age_s": int(now() - float(r.get("joined", now()))),
+                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "", "guard": "",
+                     "task": st.get("task", "") if hs == "busy" or bg else "", "summoner": "-", "age_s": int(now() - float(r.get("joined", now()))),
                      "queued": queue_len(key), "denied": {}, "workdir": r.get("cwd", ""), "agents_status": "",
                      "wake": "listener" if adhoc_listening(r) else ("tmux" if r.get("tmux_pane") else "hooks")})
     return rows
@@ -5095,7 +5197,8 @@ def build_parser():
     sp.add_argument("--force", action="store_true")
     sp.add_argument("--refresh", action="store_true", help="re-read the folder's files after you reviewed a change")
     sp.add_argument("--trust-code", action="store_true", help="the folder has hooks/MCP; answer its trust dialog automatically")
-    sp.add_argument("--allow", action="append", help="extra permission rule, e.g. 'Bash(go test*)' (runs the repo's code)")
+    sp.add_argument("--allow", action="append", help="extra permission rule, e.g. 'Bash(go test*)' (runs the repo's code); on a re-add, the whole list")
+    sp.add_argument("--keep-auto-rules", action="store_true", help="re-add with --allow or --refresh: keep the rules auto-unblock added")
     sp.add_argument("--deny", action="append", help="extra path to deny (relative to the folder)")
     sp.add_argument("--mode", help="permission mode (default bypassPermissions); a stricter one such as dontAsk or acceptEdits uses the allowlist")
     sp.add_argument("--auto-unblock", choices=["on", "off"], help="on: pros lifts a denial no deny rule caused by itself and restarts the professional (config auto_unblock, default on); off: a note only")
