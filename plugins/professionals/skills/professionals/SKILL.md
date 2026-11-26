@@ -33,7 +33,7 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros harness list [--json]` | The harnesses pros can start (claude, pi, ...) and whether their program is found; `add`/`remove` are user only |
 | `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note] [--no-wake] [--fresh] [--fallback name]` | Send a message; queued if the target is busy; starts an allowlisted professional that is not running (caps still apply), unless `--no-wake`; `--fresh` runs it on a new session (idle one replaced, busy one refused with exit 5); `--fallback` names who re-runs the task if the target dies or misses the deadline |
 | `pros read <id>` | Read a message that arrived as a pointer |
-| `pros inbox` | Replies waiting for you (for sessions that are not professionals) |
+| `pros inbox` | Replies waiting for you (for sessions that are not professionals); also `kind=status` lines: a professional's turn ended while its own command still runs, so its final message is a progress line, not the answer (that follows) |
 | `pros reply <task> <text>` or `pros reply <task> - <<'EOF'` | Answer a task by its id. Use the quoted heredoc form for any text with backticks, quotes, `$` or newlines: Claude Code denies those inline |
 | `pros ask <to> <text> [--wait 90] [--task ID] [--fallback name]` | Send a task and wait up to 90 s for the answer; starts an allowlisted professional that is not running; the same `--task` id and text again returns the stored answer |
 | `pros wait <task> [--timeout 90]` | Keep waiting for an earlier ask; can be repeated; returns a late real reply in preference to the timeout notice |
@@ -66,7 +66,7 @@ If `pros` is not found on PATH, run it by its full path. Every message footer pr
 Every message the CLI delivers starts with one header line, written by the CLI from the sender's identity, never by hand:
 
 ```
-[pro-msg id=<id> from=<name> to=<name> task=<task-id> kind=<task|reply|note> reply-to=<name> chain=a>b>c]
+[pro-msg id=<id> from=<name> to=<name> task=<task-id> kind=<task|reply|note|status> reply-to=<name> chain=a>b>c]
 <body>
 ```
 

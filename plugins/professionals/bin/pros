@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -2467,10 +2467,11 @@ def pump_inner():
             last = " (attempt %d of %d; no attempts left)" % (attempt_no(m), max_attempts()) if max_attempts() > 1 and attempt_no(m) > 1 else ""
             notify(m["from"], m["task"], "timeout: task %s to %s got no answer by its deadline (target state: %s)%s" % (m["task"], m["to"], why, last))
     for m in all_msgs():
-        if m["kind"] in ("reply", "note") and m["state"] == "queued" and now() > m["deadline"]:
+        if m["kind"] in ("reply", "note", "status") and m["state"] == "queued" and now() > m["deadline"]:
             m["state"], m["fail_reason"] = "failed", "expired unread"
             save_msg(m)
-            audit_msg_failed(m, "expired_unread")
+            if m["kind"] != "status":  # a status has no msg_created event (event-v1), so no other event either
+                audit_msg_failed(m, "expired_unread")
             with contextlib.suppress(OSError):
                 os.unlink(run_dir("inbox", m["id"]))
     start_reruns()
@@ -2846,7 +2847,10 @@ def cmd_hook(a):
 
 def pro_hook(event, raw, p):
     s = os.environ["PRO_SESSION"]
-    key = hashlib.sha1((event + raw).encode()).hexdigest()
+    tsize = ""
+    with contextlib.suppress(OSError, TypeError):
+        tsize = str(os.path.getsize(p.get("transcript_path")))  # 0.8.1: a twin hook sees the same transcript; a next turn, a longer one
+    key = hashlib.sha1((event + raw + tsize).encode()).hexdigest()
     with lock(s + ".st", 3):  # read-check-write under one lock: two identical hooks cannot both pass
         d = st_get(s)
         ev = d.get("last_event") or {}
@@ -2945,6 +2949,10 @@ def auto_reply(s, final, transcript=None):
                for c in all_msgs()):
             return  # it delegated part of the work and is waiting for that answer
         target = orig["reply_to"] or orig["from"]
+        bg = bg_commands(pane_pid(s)) if rec.get("proto", "claude") == "claude" else []
+        if bg:  # 0.8.1: waiting on a command it started: the final message is a status, the reply comes when the work ends
+            post_status(rec, orig, target, final, len(bg))
+            return
         body = "[auto-reply from the final message of %s]\n%s" % (me, final)
         for fp, text in turn_writes(transcript) if transcript else []:  # the reply command was refused: the file it wrote rides along
             body += "\n\n[file written this turn: %s]\n%s" % (fp, text)
@@ -2970,16 +2978,61 @@ def auto_reply(s, final, transcript=None):
         log("auto-reply-error", err=str(e))
 
 
+def post_status(rec, orig, target, final, n):
+    """A kind=status message: stored for the recipient's inbox, never pasted, never a wake, never counted as the reply.
+    The task stays open (injected), so the next turn end or `pros reply` answers it."""
+    me = rec["name"]
+    body = "[status from the final message of %s: waiting on %d command(s) it started; the reply follows when they end]\n%s" % (me, n, final)
+    m = new_msg(me, target, orig["task"], "status", me, orig["chain"], body, now() + 3600, parent=orig["id"])
+    m["auto_reply"], m["project"] = True, rec.get("project", "")
+    if orig.get("origin_session"):
+        m["origin_session"] = orig["origin_session"]
+    save_msg(m)  # no msg_created event: the audit contract (event-v1) has no status kind
+    if target == "user":
+        ensure(run_dir("inbox"))
+        (run_dir("inbox") / m["id"]).write_text("")
+    log("auto-status", task=orig["task"], to=target, bg=n)
+
+
+def start_cap_handoff(s):
+    """The Stop-hook cap ended a chain of deliveries while messages wait: deliver the next one as soon as the session
+    is idle (a fresh turn, so the cap still breaks the chain), not at the next pump pass (T113: up to pump_interval_s)."""
+    with contextlib.suppress(OSError):
+        env = {k: v for k, v in os.environ.items() if k not in ("PRO_SELF", "PRO_SESSION", "TMUX", "TMUX_PANE")}
+        subprocess.Popen([sys.executable, os.path.realpath(__file__), "deliver-idle", s], env=env, cwd=str(pro_home()),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def cmd_deliver_idle(a):
+    """Internal (start_cap_handoff): wait for the session to be idle at its prompt, then deliver its oldest queued message."""
+    s, end = a.session, now() + float(cfg()["ack_timeout_s"])
+    with audit_as(actor="pump"):
+        while now() < end:
+            rec = get_rec(s)
+            if not rec or not queue_len(s):
+                return 0
+            try:
+                with lock(s, 1):
+                    if deliver_next(rec):
+                        log("cap-handoff", session=s)
+                        return 0
+            except Fail:
+                pass
+            time.sleep(0.2)
+    return 0
+
+
 def hook_stop(s, p, common):
     cap = cfg()["max_blocks"]
     try:
         with lock(s, 3):
             blocks = st_get(s).get("blocks", 0) if p.get("stop_hook_active") else 0
             if blocks >= cap:
+                auto_reply(s, p.get("last_assistant_message"), p.get("transcript_path"))  # the capped turn's answer still goes out
                 st_set(s, state="idle", blocks=0, **common)
                 rec = get_rec(s)
                 if rec and queue_len(s):
-                    notify(rec.get("summoner", "user"), "-", "%s hit the delivery cap (%d in a row); %d message(s) wait" % (rec["name"], cap, queue_len(s)))
+                    start_cap_handoff(s)  # T113: delivered as soon as the session is idle; no note, nothing is stuck
                 return
             auto_reply(s, p.get("last_assistant_message"), p.get("transcript_path"))
             m, dst = queue_claim(s, "stop-hook")
@@ -4243,10 +4296,11 @@ def cmd_read(a):
     if not m:
         die("no message %s" % a.id)
     print_msg(m)
-    if m["kind"] in ("reply", "note") and m["state"] != "answered":
+    if m["kind"] in ("reply", "note", "status") and m["state"] != "answered":
         m["state"], m["read_at"] = "answered", now()
         save_msg(m)
-        audit_emit("msg_read", {"reader": self_name()}, msg=m["id"])
+        if m["kind"] != "status":
+            audit_emit("msg_read", {"reader": self_name()}, msg=m["id"])
         with contextlib.suppress(OSError):
             os.unlink(run_dir("inbox", m["id"]))
     return 0
@@ -5133,6 +5187,8 @@ def build_parser():
     sp = add("prune", cmd_prune, help="delete finished tasks' messages older than msg_retention_days (user only)")
     sp.add_argument("--days", type=float, help="override msg_retention_days for this run (0 keeps everything)")
     sp = add("auto-unblock", cmd_auto_unblock, help=argparse.SUPPRESS)
+    sp.add_argument("session")
+    sp = add("deliver-idle", cmd_deliver_idle, help=argparse.SUPPRESS)
     sp.add_argument("session")
     sp = add("pump", cmd_pump, help=argparse.SUPPRESS)
     sp.add_argument("--loop", action="store_true")

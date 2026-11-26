@@ -117,6 +117,12 @@ A folder session gets: the folder's own settings (loaded by Claude Code), the de
 - **Live states.** `pros team` and `pros list` show, besides the internal state: `working` (in a turn), `waiting` (the turn is over but a command the session started still runs) and `ready` (free for input). The check is real, not a guess from the transcript: a Bash tool command of Claude Code runs as `bash -c source <home>/.claude/shell-snapshots/...`; a live such shell in the session's process tree (under the tmux pane, or under `CLAUDE_PID` for a joined session) after its turn ended is a background command, and its pids are named in the reason. `--json` rows keep `state` and add `activity` and `bg`. A waiting professional is not idle-reaped and not replaced by `--fresh` (exit 5). Delivery is unchanged: a waiting session takes input, so its messages are still delivered.
 - **Known limits.** The listener covers `adhoc_listen_s` after each turn; a session idle longer is woken only by the tmux paste (or the next prompt). Background subagents (not shell commands) are not counted as `waiting`. A session without the plugin's hooks and outside tmux gets its mail at `pros inbox` only.
 
+### 4.8 Delivery cap hand-off and status messages (0.8.1)
+
+- **Cap hand-off (064 T113).** `max_blocks` (default 10) still ends a chain of Stop-hook deliveries, so one turn never runs on without end. When it ends one while messages wait, the Stop hook starts `pros deliver-idle <session>` in a process of its own: it waits (up to `ack_timeout_s`) for the session to be idle at its prompt and pastes the next message, a fresh turn. Before, that message waited for the next pump pass (`pump_interval_s`, 5 s), so every ~10th back-to-back voice turn paid up to 5 s. The capped turn's final message still goes out as the auto-reply, and no "delivery cap" note is sent. Why this and not a per-entry cap: it fixes every entry with nothing to tune, and the cap keeps its job.
+- **Status, not reply, while waiting.** A professional whose turn ends while a command it started still runs (`waiting`, 4.7) sends its final message as `kind=status`: kept in the recipient's inbox (`pros inbox`, `pros read`), never pasted or woken, never returned by `pros ask`/`pros wait`, and not counted as the reply. The task stays open; the next turn end (Claude Code starts one when the command ends) or `pros reply` answers it. Status messages have no `msg_created` audit event (event-v1 has no status kind).
+- **Hook twins.** The dedupe of a hook fired twice (plugin installed and `--plugin-dir`) adds the transcript size to its key, so two consecutive turns with the same payload are never taken for twins.
+
 ### 4.4 Shared context
 
 A resumed folder session keeps its context for every summoner. `pros show` says so; `--fresh` is the opt-out.
@@ -136,7 +142,7 @@ Live, reaped and lost describe the process and are independent of the state abov
 ## 6. Message protocol
 
 ```
-[pro-msg id=m-.. from=<name|user> to=<name> task=t-.. kind=task|reply|note reply-to=<name> chain=a>b]
+[pro-msg id=m-.. from=<name|user> to=<name> task=t-.. kind=task|reply|note|status reply-to=<name> chain=a>b]
 <body>
 ```
 
@@ -180,6 +186,7 @@ All tests run with a stand-in `claude` program on a private tmux socket and a te
 | Automatic unblock: rule, restart with history, one-line note, audit event, protected paths kept, per-pro and config switch, no restart loop | `tests/test_v061.py` |
 | Second name for the same folder: separate entries, sessions and session ids | `tests/test_v071.py` |
 | Ad hoc professionals (join, send and receive as the name, paste, listener, Stop hook, leave) and live states working/waiting/ready | `tests/test_v080.py` |
+| Cap hand-off without the pump (T113), kind=status while waiting, hook twins by transcript size | `tests/test_v081.py` |
 | Harness registry, per-professional harness/model/thinking, Pi RPC bridge (stand-in `tests/fake_pi.py`), cross-harness messaging, guard, dialogs refused, evaluations | `tests/test_v070.py` |
 
 ## 9. Out of scope

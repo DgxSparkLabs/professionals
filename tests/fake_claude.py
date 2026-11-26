@@ -326,6 +326,7 @@ class Session:
                 d = {}
             if d.get("decision") == "block":
                 text, active = d["reason"], True
+                rewake = True  # a Stop-hook continuation fires no UserPromptSubmit in Claude Code (it would reset the block count)
                 continue
             self.status("idle")
             self.draw()
