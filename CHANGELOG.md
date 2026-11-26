@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.9.2
+
+- Safety: a Cursor model on Pi (`guard: none`) ran its tools in Cursor's own agent, unseen by the pros guard. pros now
+  points the provider at a per-session wrapper (`CURSOR_AGENT_PATH`) that starts the agent in bwrap: `/` read-only,
+  writes only in its folder and Cursor's own dirs, protected paths, the pros home, Pi's auth and `.env`/key files hidden.
+  Shown as `guard: sandbox`; no bwrap or no agent refuses the summon; `harnesses.pi.tool_sandbox: {}` opts out.
+- A Pi session is told to answer with its final message (pros already sends it as the reply), never with a shell
+  command: seen live, a Cursor model hung 10 minutes on Shell calls for `pros reply` and `echo ok`.
+
 ## 0.9.1
 
 - Safety: the user-only gate (`unblock`, `audit`, `add` and the rest) could be lifted inside a professional session by

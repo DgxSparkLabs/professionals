@@ -73,6 +73,7 @@ def run_prompt(text, sfile, read_line):
     m = re.search(r"\[pro-msg id=(m-[0-9a-f]+)", text)
     if m:
         log("PROMPT %s%s" % (m.group(1), " dup" if "possible duplicate" in text else ""))
+        log("TAIL %s" % text.strip().splitlines()[-1])
     else:
         log("HUMAN %s" % text[:60])
     parts = []

@@ -3,6 +3,7 @@ with; before, it fell back to the entry, persona or config model (seen live: --m
 import json
 import os
 import subprocess
+import sys
 import time
 import unittest
 
@@ -109,6 +110,11 @@ class ResumeKeepsModel(Base):
 
 
 class GuardMark(test_v070.PiCase):
+    def setUp(self):
+        super().setUp()  # 0.9.2: a cursor/ model needs an agent to sandbox; any program stands in (it is never run here)
+        self.config({"harnesses": {"pi": {"bin": "%s %s" % (sys.executable, test_v070.FAKE_PI), "path_add": [],
+                                          "tool_sandbox": {"env": "CURSOR_AGENT_PATH", "bin": sys.executable, "rw": []}}}})
+
     def team(self, name):
         return [r for r in json.loads(self.ok("team", "--json").stdout) if r["name"] == name][0]
 
@@ -118,12 +124,12 @@ class GuardMark(test_v070.PiCase):
     def test_cursor_model_on_pi_is_marked_and_warned(self):
         d = self.make_folder("gp", agents="# gp\nAnswer briefly.\n")
         r = self.ok("add", d, "--harness", "pi", "--model", "cursor/grok-4.7-medium")
-        self.assertIn("guard: none", r.stdout + r.stderr)
-        self.assertEqual(self.view("gp")["guard"], "none")
+        self.assertIn("guard: sandbox", r.stdout + r.stderr)  # 0.9.2: was none; Cursor's agent now runs in bwrap
+        self.assertEqual(self.view("gp")["guard"], "sandbox")
         self.summon("gp")
-        self.assertEqual(self.team("gp")["guard"], "none")
-        self.assertIn("guard: none", self.ok("team").stdout)
-        self.assertIn("guard: none", self.ok("list").stdout)
+        self.assertEqual(self.team("gp")["guard"], "sandbox")
+        self.assertIn("guard: sandbox", self.ok("team").stdout)
+        self.assertIn("guard: sandbox", self.ok("list").stdout)
 
     def test_other_pi_model_and_claude_are_not_warned(self):
         d = self.make_folder("gq", agents="# gq\nAnswer briefly.\n")
@@ -142,7 +148,7 @@ class GuardMark(test_v070.PiCase):
         r = self.ok("add", d, "--harness", "pi")
         self.assertIn("guard: unknown", r.stdout + r.stderr)
         r = self.ok("enable", "gu", "--model", "cursor/gpt-5")
-        self.assertIn("guard: none", r.stdout + r.stderr)
+        self.assertIn("guard: sandbox", r.stdout + r.stderr)  # 0.9.2: was none
 
 
 class NarrowAutoRules(Base):
