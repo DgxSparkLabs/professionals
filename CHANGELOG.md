@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.8.4
+
+No professional on a model nobody chose (card 1586: professionals were seen on Fable).
+
+- Model precedence ends in a built-in default `opus` (after `--model`, the entry, the persona and config `model`). Before, with none of them, pros passed no `--model` and the session ran on Claude Code's own default, which the `fable` block never saw.
+- The pump reads the model each Claude session really runs on, from its transcript: `pros team` shows it (`--json` `seen_model`; in brackets in the table when it differs, with `(blocked)`). A blocked model the user did not store on that professional sends one note to the user and the summoner; the session is not stopped.
+- Tests: `tests/test_v084.py`.
+
 ## 0.8.3
 
 Worker verdicts are hard to forget (audit-24h: the lead's log of what each worker is good at stayed empty).

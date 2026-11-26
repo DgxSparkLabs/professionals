@@ -65,6 +65,7 @@
   "last_activity",
   "last_denial",
   "last_event",
+  "model_mtime",
   "ready",
   "reason",
   "state",

@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.3"
+VERSION = "0.8.4"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -95,6 +95,7 @@ BUILTIN_HARNESSES = {
            "note": "Pi over its RPC protocol (pros bridge in tmux); no --model: the default model of your Pi config"},
 }
 THINK_RE = re.compile(r"^[a-z]{1,12}$")
+BUILTIN_MODEL = "opus"  # 0.8.4 (card 1586): with no --model, entry, persona or config model; never Claude Code's own default
 
 
 class Fail(Exception):
@@ -1416,6 +1417,44 @@ def check_denials(rec):
         start_auto_unblock(s)
 
 
+def blocked_hit(mdl, c=None) -> str:
+    return next((str(b) for b in (c or cfg()).get("blocked_models") or [] if b and mdl and str(b).lower() in mdl.lower()), "")
+
+
+def check_seen_model(rec, e):
+    """0.8.4: the model a Claude session really runs on, read from its transcript (pros passes --model, but a settings file,
+    an env var or a /model inside the session can change it).  A blocked one the user did not store on the entry: one note."""
+    if rec.get("proto", "claude") != "claude":
+        return
+    s = rec["session"]
+    st = st_get(s)
+    tp = st.get("transcript_path")
+    if not tp or not os.path.exists(tp) or st.get("model_mtime") == os.path.getmtime(tp):
+        return
+    mt, seen = os.path.getmtime(tp), ""
+    with contextlib.suppress(OSError), open(tp, "rb") as f:
+        f.seek(max(0, os.path.getsize(tp) - 262144))
+        for ln in reversed(f.read().decode("utf-8", "replace").splitlines()):
+            with contextlib.suppress(ValueError, AttributeError):
+                d = json.loads(ln)
+                m = d.get("message", {}).get("model") if d.get("type") == "assistant" else None
+                if m and not m.startswith("<"):
+                    seen = m
+                    break
+    st_set(s, model_mtime=mt, **({"seen_model": seen} if seen else {}))
+    hit = blocked_hit(seen)
+    if not hit or (e or {}).get("model") == seen or st.get("model_alerted") == seen:
+        return
+    st_set(s, model_alerted=seen)
+    text = ("%s is running on %s, a blocked model (blocked_models: %s) nobody stored on it; pros asked for %s. Stop it (pros stop %s) and "
+            "check the Claude settings or env that override --model; only the user allows it: pros add|enable %s --model %s" % (
+                rec["name"], seen, hit, rec.get("model") or "the default", rec["name"], rec["name"], seen))
+    notify("user", "-", text)
+    if rec.get("summoner") and rec["summoner"] != "user":
+        notify(rec["summoner"], "-", text)
+    log("blocked-model-seen", session=s, model=seen)
+
+
 def auto_unblock_on(e) -> bool:
     """config auto_unblock (default on), unless the user turned it off for this professional (entry auto_unblock: false)."""
     if e and e.get("auto_unblock") is not None:
@@ -2503,6 +2542,8 @@ def pump_inner():
                     st_set(s, alerted="")
                 with contextlib.suppress(Exception):
                     check_denials(rec)
+                with contextlib.suppress(Exception):
+                    check_seen_model(rec, (reg_get(tolerant=True)[0].get("entries") or {}).get(rec.get("entry", rec["name"])))
                 pend = st_get(s).get("auto_unblock_pending")
                 if pend and now() - pend.get("at", 0) > 3:  # 0.8.2: its process found the lock busy (a restart still running): retry
                     st_set(s, auto_unblock_pending=dict(pend, at=now()))
@@ -4212,7 +4253,7 @@ def resolve_model(model, e, persona, c=None, harness="claude"):
     emodel = e.get("model") if harness_of(e, None, c) == harness else ""
     if not h.get("blocked_models"):
         return model or emodel or ""
-    mdl = model or emodel or ((persona["model"] if persona["model"] not in ("", "inherit") else "") if persona else "") or c["model"]
+    mdl = model or emodel or ((persona["model"] if persona["model"] not in ("", "inherit") else "") if persona else "") or c["model"] or BUILTIN_MODEL
     hit = next((b for b in c.get("blocked_models") or [] if b and mdl and str(b).lower() in mdl.lower()), None)
     if hit and not (emodel and mdl == emodel):
         die("model %s is blocked for professionals (blocked_models: %s); only the user can allow it for one professional: "
@@ -4654,7 +4695,7 @@ def cmd_team(a):
             reason = "turn over; %d command(s) it started still run (pid %s)" % (len(bg), ",".join(map(str, bg[:3])))
         rows.append({"name": rec["name"], "session": s, "scope": rec["scope"], "state": state, "reason": reason, "activity": act, "bg": len(bg),
                      "harness": rec.get("harness", "claude"), "model": rec.get("model") or st.get("pi_model") or "", "thinking": rec.get("thinking") or "",
-                     "guard": guard_of(rec.get("harness", "claude"), rec.get("model") or st.get("pi_model") or ""),
+                     "guard": guard_of(rec.get("harness", "claude"), rec.get("model") or st.get("pi_model") or ""), "seen_model": st.get("seen_model", ""),
                      "task": st.get("task", "") if act in ("working", "waiting") else "", "summoner": rec.get("summoner", ""),
                      "age_s": int(now() - rec["started"]), "queued": queue_len(s), "denied": den,
                      "workdir": rec["workdir"], "agents_status": agents_status().get(s, ""), "verdict": last_verdict(rec.get("entry") or rec["name"])})
@@ -4673,6 +4714,9 @@ def cmd_team(a):
         r["denied"] = ",".join("%s x%d" % kv for kv in r["denied"].items())
         r["state"] = r["activity"] + ("*" if r["reason"] else "")
         r["model"] = (r["model"] or "-") + (":" + r["thinking"] if r["thinking"] else "")
+        sm = r.get("seen_model") or ""
+        if sm and (blocked_hit(sm) or not r["model"].startswith(sm)):  # 0.8.4: what it really runs on, when that differs
+            r["model"] += " [%s%s]" % (sm, " (blocked)" if blocked_hit(sm) else "")
     for r in rows:
         v = r.get("verdict") or {}
         r["verdict"] = ("%s: %s" % (v["rating"], v["note"]) if v.get("note") else v.get("rating", ""))[:40]
@@ -4756,7 +4800,7 @@ def adhoc_rows() -> list:
         hs = st.get("state") or "idle"
         bg = bg_commands(r["claude_pid"]) if hs != "busy" else []
         rows.append({"name": r["name"], "session": key, "scope": "adhoc", "state": "busy" if hs == "busy" else "idle", "reason": "",
-                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "", "guard": "", "verdict": {},
+                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "", "guard": "", "verdict": {}, "seen_model": "",
                      "task": st.get("task", "") if hs == "busy" or bg else "", "summoner": "-", "age_s": int(now() - float(r.get("joined", now()))),
                      "queued": queue_len(key), "denied": {}, "workdir": r.get("cwd", ""), "agents_status": "",
                      "wake": "listener" if adhoc_listening(r) else ("tmux" if r.get("tmux_pane") else "hooks")})
