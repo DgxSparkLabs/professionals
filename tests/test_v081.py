@@ -88,6 +88,30 @@ class WaitingStatus(ProTestCase):
         self.assertEqual(self.kinds("t-rd"), ["reply"])
 
 
+class TeamTitle(ProTestCase):
+    def row(self):
+        return [r for r in json.loads(self.ok("team", "--json").stdout) if r["name"] == "alpha"][0]
+
+    def test_waiting_row_keeps_task_and_title(self):
+        self.summon("alpha")
+        self.ok("send", "alpha", "ECHO run the container-1 health check\nBG 20", "--task", "t-wt")
+        self.wait_until(lambda: self.row()["activity"] == "waiting", 20, "waiting")
+        r = self.row()
+        self.assertEqual((r["task"], r["title"]), ("t-wt", "ECHO run the container-1 health check"))
+
+    def test_working_row_title_is_cut(self):
+        self.summon("alpha")
+        self.ok("send", "alpha", "ECHO " + "x" * 200 + "\nSLEEP 4", "--task", "t-long")
+        self.wait_until(lambda: self.row()["activity"] == "working", 10, "working")
+        r = self.row()
+        self.assertEqual(r["task"], "t-long")
+        self.assertEqual(len(r["title"]), 120)
+        self.assertTrue(r["title"].startswith("ECHO xxx") and r["title"].endswith("\u2026"))
+        self.ok("stop", "alpha")
+        self.summon("alpha")
+        self.assertEqual((self.row()["task"], self.row()["title"]), ("", ""))  # ready: no task, no title
+
+
 class Documented(unittest.TestCase):
     def test_documented(self):
         for f, words in ((("docs", "spec", "spec.md"), ("kind=status", "max_blocks")), (("CHANGELOG.md",), ("## 0.8.1",)),

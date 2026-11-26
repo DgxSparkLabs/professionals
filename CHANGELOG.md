@@ -9,6 +9,7 @@ Delivery cap without the pump wait (spec 064 T113) and no reply noise from a wai
 - `max_blocks`: when the cap ends a chain of Stop-hook deliveries and messages wait, the Stop hook starts `pros deliver-idle <session>` (internal), which pastes the next one as soon as the session is idle at its prompt. Before, it waited for the next pump pass (up to `pump_interval_s`, 5 s): every ~10th back-to-back voice turn paid that. The "hit the delivery cap" note is gone; the capped turn's final message now still goes out as the auto-reply.
 - A professional whose turn ends while a command it started still runs (`waiting`) sends its final message as `kind=status`: in the inbox, never pasted or woken, not returned by `pros ask`/`pros wait`; the task stays open and the next turn end or `pros reply` answers it.
 - Hook dedupe (the same hook fired twice) adds the transcript size to its key: two consecutive turns with an identical payload were taken for twins and the second Stop hook was dropped.
+- `pros team --json` (card 1601): a `waiting` row keeps its `task` id (before: only `busy` rows had one), and working/waiting rows add `title`, the first line of that task's message, cut at 120 characters.
 - Spec 4.8. Tests: `tests/test_v081.py`. The stub `claude` no longer fires UserPromptSubmit on a Stop-hook continuation (Claude Code does not); that reset the block count, so `test_block_cap_then_pump_finishes` never reached the cap before.
 
 ## 0.8.0
