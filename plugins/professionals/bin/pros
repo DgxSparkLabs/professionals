@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.9.0"
+VERSION = "0.9.1"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -600,17 +600,41 @@ def ppid_of(pid):
             return 0
 
 
+PROS_SERVER_RE = re.compile(r"(^|/)tmux -L \S+ -f /dev/null new-session -d -s (pro-|pros-pump( |$))")
+
+
+def proc_args(pid) -> str:
+    """The command line of a process ('' if unknown): /proc, else ps (macOS)."""
+    try:
+        return Path("/proc/%d/cmdline" % pid).read_bytes().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    except OSError:
+        try:
+            return subprocess.run(["ps", "-o", "args=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+
+
 def in_pros_tmux() -> bool:
-    """True when this process descends from the pros tmux server: an env var alone is not the guard (R-V2-1)."""
+    """True when this process descends from a pros tmux server: an env var alone is not the guard (R-V2-1).  0.9.1: any tmux
+    server pros started counts (its command line is pros' own new-session), not only the one PRO_TMUX_SOCKET names, so
+    unsetting PRO_SELF and naming another socket inside a professional session no longer lifts the user-only gate."""
     srv = pros_server_pid()
-    if not srv:
-        return False
     pid, hops = os.getppid(), 0
     while pid > 1 and hops < 64:
-        if pid == srv:
+        if pid == srv or (PROS_SERVER_RE.search(proc_args(pid)) and server_home(pid) in (None, str(pro_home().resolve()))):
             return True
         pid, hops = ppid_of(pid), hops + 1
     return False
+
+
+def server_home(pid):
+    """The pros home a pros tmux server serves (its PRO_HOME, else the default), or None when its environment cannot be read
+    (then it counts as this home: refuse).  A server of another home (a test's temporary one) guards that home, not this."""
+    try:
+        env = dict(x.split("=", 1) for x in Path("/proc/%d/environ" % pid).read_bytes().decode("utf-8", "replace").split("\0") if "=" in x)
+    except OSError:
+        return None
+    return str(Path(env.get("PRO_HOME") or Path(env.get("HOME") or "~").expanduser() / ".professionals").expanduser().resolve())
 
 
 def require_user(what, why="a professional session cannot change the list of professionals"):

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.9.1
+
+- Safety: the user-only gate (`unblock`, `audit`, `add` and the rest) could be lifted inside a professional session by
+  unsetting `PRO_SELF` and pointing `PRO_TMUX_SOCKET` at a server that does not exist (seen: `pros unblock` added a rule).
+  The ancestry check now counts any tmux server pros started, whatever the environment says, when it serves
+  the same pros home (a symlink to it counts; a test's temporary home does not).
+
 ## 0.9.0
 
 - The pump loop (`pros pump --loop`, the `pros-pump` tmux session) re-execs itself when its script changes on disk.
