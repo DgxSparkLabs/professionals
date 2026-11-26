@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.6.0
+
+Professionals run in `bypassPermissions` by default (task bypass-1126): professionals were stuck on denied `wc -l`, heredocs and a Write in their own home.
+
+- Default mode `bypassPermissions` for every professional, marketplace or folder (`DEFAULTS.default_mode`). A stricter mode only when the user sets it: `pros summon --mode`, the entry's mode (`pros add <dir> --mode`, new `pros enable <name> --mode`; `--mode ''` clears it), or `default_mode` in config. In bypass the persona `tools:` narrowing to the safe list is skipped (Claude Code ignores allow rules there); it stays the path for stricter modes. As root, where Claude Code refuses bypass, an unchosen default falls back to `dontAsk` with a note.
+- Deny rules are unchanged in every mode: credentials (`DEFAULT_DENY`), config and entry `deny_paths`, pros state files, sandbox `denyRead`.
+- No first-run dialog: bypass settings files set `skipDangerousModePermissionPrompt: true` (settings reference: honoured in user, local, managed settings "and files passed with `--settings`").
+- Unblock system: the pump reads each live professional's transcript and sends one note per new denied call (tool + exact command or path) to the summoner, and to the user when the summoner is a professional, with the rule that blocked it and the fix. New `pros unblock <name> [--allow RULE]` (user only) adds the rule to the entry's allow list, restarts the live session with its history (settings rewritten, open task resent once, marked possible duplicate) and tells the professional to retry. Rules or denials touching a protected path are refused with exit 4 (`protected`); `pros add --allow` refuses them too.
+- Models: `pros add --model` and `pros enable --model` store a model on the entry (only `summon --model` existed, per run). New config `blocked_models` (default `["fable"]`): a matching model is refused (exit 4, `model_blocked`) unless the user stored exactly that model on the professional's entry.
+- Marketplace entries' `allow` list is now used when building their settings (it was ignored).
+- Fix: `pros add <dir> --refresh --allow R` (and `--deny`, `--mode`) did not update a registered folder's entry. They now do, with or without `--refresh`; only `--refresh` re-reads the files' hash, so a changed folder still needs review.
+- `pros team --help` explains the DENIED column; `pros team` prints the unblock hint when a denial is counted. `pros show` prints the mode.
+- Spec 4.5 "Permission model", R6, README, design notes and the core SKILL.md updated. Tests: `tests/test_v060.py`; `tests/fixtures/audit/schema.json` knows the new state keys. Tests that asserted the old `dontAsk` default now pin `default_mode: dontAsk` to keep covering the strict path.
+
 ## 0.5.4
 
 Docs and version only; no code change. Task 311: one live session per professional.

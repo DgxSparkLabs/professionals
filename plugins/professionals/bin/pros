@@ -47,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.5.4"
+VERSION = "0.6.0"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -58,15 +58,18 @@ REQUIRED_SECTIONS = ["Purpose", "In scope", "Out of scope", "Delegate when", "To
 
 DEFAULTS = {
     "max_live": 6, "max_depth": 4, "idle_reap_min": 30, "deliver_deadline_s": 600,
-    "stuck_min": 10, "default_mode": "dontAsk", "model": "", "summon_budget_per_hour": 20,
+    "stuck_min": 10, "default_mode": "bypassPermissions", "model": "", "summon_budget_per_hour": 20,
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
     "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
     "publish_guard": "", "resume_max_days": 14, "max_resends": 1, "max_attempts": 2,
     "wake_on_send": True, "failover": True, "msg_retention_days": 30,
+    "blocked_models": ["fable"],  # a model whose name contains one of these runs only when the user stored it on that professional's entry
 }
 DEFAULT_DENY = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/.netrc", "~/.claude/.credentials.json"]
 
-# What a persona's `tools:` line may grant (R6).  Anything else is dropped.
+BYPASS = "bypassPermissions"  # 0.6.0 default: every tool, deny rules still enforced (Claude Code: "Deny rules block in every mode")
+
+# What a persona's `tools:` line may grant under a stricter mode (R6).  Anything else is dropped.
 SAFE_TOOLS = {"Read", "Glob", "Grep", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite"}
 SAFE_BASH = ["Bash(git status)", "Bash(git diff)", "Bash(git diff --stat)", "Bash(git log*)",
              "Bash(git show*)", "Bash(git blame*)", "Bash(git ls-files*)", "Bash(git ls-tree*)"]
@@ -834,7 +837,7 @@ def task_counts(name, t0, t1) -> dict:
     return n
 
 
-AUDIT_END = {"reaped": "reaped", "died": "crashed", "lost": "crashed", "failed-to-start": "failed_spawn", "stopped": "stopped", "disabled": "stopped", "stuck": "stopped"}
+AUDIT_END = {"unblocked": "stopped", "reaped": "reaped", "died": "crashed", "lost": "crashed", "failed-to-start": "failed_spawn", "stopped": "stopped", "disabled": "stopped", "stuck": "stopped"}
 
 
 def hist_end(rec, why):
@@ -1146,6 +1149,17 @@ def agents_status() -> dict:
 def transcript_denials(path: str) -> dict:
     """Count denied tool calls from real tool_result errors (text of files the session read must not count)."""
     out = {}
+    for d in transcript_denial_list(path):
+        out[d["tool"]] = out.get(d["tool"], 0) + 1
+    return out
+
+
+DENY_TARGET_KEYS = ("command", "file_path", "notebook_path", "path", "url", "pattern")
+
+
+def transcript_denial_list(path: str) -> list:
+    """Each denied call: {id, tool, target, text}.  The tool_use block (matched by id) names the exact command or path."""
+    out, uses = [], {}
     try:
         size = os.path.getsize(path)
         with open(path, "rb") as f:
@@ -1156,18 +1170,102 @@ def transcript_denials(path: str) -> dict:
     for ln in lines:
         try:
             content = json.loads(ln).get("message", {}).get("content")
-        except ValueError:
+        except (ValueError, AttributeError):
             continue
         for b in content if isinstance(content, list) else []:
+            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("id"):
+                uses[b["id"]] = b
             if not (isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error")):
                 continue
             text = json.dumps(b.get("content"))
             m = re.search(r"Permission to use (\w+)[^\"]{0,200}denied", text)
-            if m:
-                out[m.group(1)] = out.get(m.group(1), 0) + 1
-            elif "denied by your permission settings" in text:
-                out["Read"] = out.get("Read", 0) + 1
+            if not m and "denied by your permission settings" not in text:
+                continue
+            use = uses.get(b.get("tool_use_id")) or {}
+            inp = use.get("input") if isinstance(use.get("input"), dict) else {}
+            target = next((str(inp[k]) for k in DENY_TARGET_KEYS if inp.get(k)), "")
+            tool = use.get("name") or (m.group(1) if m else "Read")
+            out.append({"id": b.get("tool_use_id") or "", "tool": tool, "target": target, "text": text[:2000]})
     return out
+
+
+def protected_paths(e=None) -> list:
+    """Paths no permission mode and no `pros unblock` ever opens: credentials, deny_paths (config and entry), pros state."""
+    out = list(DEFAULT_DENY) + list(cfg()["deny_paths"]) + pro_home_denies()
+    if e and e.get("kind") == "folder":
+        out += [x if x.startswith("/") else str(Path(e["path"]) / x) for x in e.get("deny_paths", [])]
+    return out
+
+
+def protected_hit(text, e=None) -> str:
+    """The protected path that `text` (a command, a path or a permission rule) touches, or ''."""
+    t = str(text or "")
+    if not t:
+        return ""
+    for p in protected_paths(e):
+        full = os.path.expanduser(p)
+        home = str(Path.home())
+        forms = {p, full, full.replace(home, "~", 1) if full.startswith(home) else full, full.replace(home, "$HOME", 1) if full.startswith(home) else full}
+        if any(f and f in t for f in forms):
+            return p
+        if not p.startswith(("~", "/")) and re.search(r"(^|[\s/(=\"'])%s($|[\s/)\"'*])" % re.escape(p), t):
+            return p  # a relative deny path such as .env
+    return ""
+
+
+def suggest_rule(tool, target) -> str:
+    """The narrowest allow rule that would have let this call through."""
+    if tool == "Bash" and target.strip():
+        word = re.split(r"[\s;|&<>]", target.strip(), 1)[0]
+        return "Bash(%s *)" % word if word and re.match(r"^[\w./-]+$", word) else "Bash"
+    return tool
+
+
+def denial_report(name, rec, d, e=None) -> str:
+    """One line for the summoner: who, which tool, the exact command or path, the rule, and the one command that fixes it."""
+    target = d["target"].replace("\n", " ")[:300] or "(no input recorded)"
+    hit = protected_hit(d["target"], e) or protected_hit(d.get("text", ""), e)
+    if hit:
+        return ("%s was denied %s: %s. Blocked by the protected-path deny rule for %s (credentials, deny_paths or pros state). "
+                "This cannot be lifted, not even by pros unblock; give it the data another way." % (name, d["tool"], target, hit))
+    rule = suggest_rule(d["tool"], d["target"])
+    return ("%s was denied %s: %s. Blocked by: no allow rule matches it in %s mode. Fix (user): %s unblock %s --allow '%s'" % (
+        name, d["tool"], target, rec.get("mode") or "this", pro_cmd(), name, rule))
+
+
+def check_denials(rec):
+    """Pump: a new denied call in a professional's transcript sends ONE note (per tool+target) to its summoner, and the user."""
+    s = rec["session"]
+    st = st_get(s)
+    tp = st.get("transcript_path")
+    if not tp or not os.path.exists(tp):
+        return
+    mt = os.path.getmtime(tp)
+    if st.get("denials_mtime") == mt:
+        return
+    seen = set(st.get("denials_seen", []))
+    keys = set(st.get("denials_keys", []))
+    try:
+        e = (reg_get(tolerant=True)[0].get("entries") or {}).get(rec.get("entry", rec["name"]))
+    except Fail:
+        e = None
+    new = []
+    for d in transcript_denial_list(tp):
+        key = d["tool"] + "\x00" + d["target"]
+        if (d["id"] and d["id"] in seen) or key in keys:
+            seen.add(d["id"])
+            continue
+        seen.add(d["id"])
+        keys.add(key)
+        new.append(d)
+    st_set(s, denials_mtime=mt, denials_seen=sorted(x for x in seen if x)[-500:], denials_keys=sorted(keys)[-200:],
+           last_denial=new[-1] if new else st.get("last_denial"))
+    for d in new:
+        text = denial_report(rec["name"], rec, d, e)
+        who = rec.get("summoner") or "user"
+        notify(who, "-", text)
+        if who != "user":
+            notify("user", "-", text)  # only the user may run pros unblock
 
 
 def live_state(rec, pane=None) -> tuple:
@@ -1974,6 +2072,8 @@ def pump_inner():
                     notify(rec.get("summoner", "user"), "-", "%s needs attention: %s (%s). Try: pros attach %s" % (rec["name"], state, reason, rec["name"]))
                 elif state in ("idle", "busy") and st.get("alerted"):
                     st_set(s, alerted="")
+                with contextlib.suppress(Exception):
+                    check_denials(rec)
                 if state == "idle":
                     deliver_next(rec)
         except Fail:
@@ -2433,7 +2533,8 @@ def cmd_show(a):
         p["may_summon"], p["skill"]))
     print("state: %s" % (entry_state(e) if e else "available (not enabled)"))
     _, dropped = tools_to_allow(p["tools"], False, False)
-    if dropped:
+    print("mode: %s" % ((e or {}).get("mode") or "%s (default)" % cfg()["default_mode"]))
+    if dropped and ((e or {}).get("mode") or cfg()["default_mode"]) != BYPASS:
         print("ignored tools (not in the safe allowlist; pros summon %s --allow-persona-tools grants them): " % p["name"] + ", ".join(dropped))
     print("\n" + p["body"].strip()[:1500])
     return 0
@@ -2454,6 +2555,8 @@ def cmd_add(a):
     if not any((path / f).exists() for f in ("CLAUDE.md", "AGENTS.md", ".claude")) and not a.force:
         die("not an agent folder: no CLAUDE.md, AGENTS.md or .claude/ in %s (use --force to register it anyway)" % path, 2)
     info = folder_scan(path)
+    for r in a.allow or []:
+        check_allow_rule(r, {"kind": "folder", "path": str(path), "deny_paths": DEFAULT_FOLDER_DENY + list(a.deny or [])})
     try:
         market = {p["name"] for p in personas(marketplace_dir())}
     except Fail:
@@ -2462,8 +2565,18 @@ def cmd_add(a):
     def edit(reg):
         for n, e in reg["entries"].items():
             if e.get("kind") == "folder" and e.get("path") == str(path):
-                if not a.refresh and not a.trust_code:
+                if not (a.refresh or a.trust_code or a.allow or a.deny or a.mode is not None or a.model is not None):
                     return "same", n
+                if a.allow:  # 0.6.0: --allow/--deny/--mode update the entry (they were ignored for a registered folder)
+                    e["allow"] = list(dict.fromkeys(list(e.get("allow", [])) + list(a.allow)))
+                if a.deny:
+                    e["deny_paths"] = list(dict.fromkeys(list(e.get("deny_paths", DEFAULT_FOLDER_DENY)) + list(a.deny)))
+                if a.mode is not None:
+                    e["mode"] = a.mode
+                if a.model is not None:
+                    e["model"] = a.model
+                if not (a.refresh or a.trust_code):
+                    return "updated", n  # the files' hash is re-read only with --refresh: a changed folder still needs review
                 e.update(content_hash=info["hash"], identity=folder_identity(path), description=e.get("description") or folder_description(path))
                 if a.trust_code:
                     e["trust_code"] = True
@@ -2478,7 +2591,7 @@ def cmd_add(a):
             "enabled": True, "keep": False, "added_at": now(), "added_by": "user", "trust_code": bool(a.trust_code),
             "pro_id": "p-" + hashlib.sha1(("folder:" + name).encode()).hexdigest()[:12],
             "description": sanitize_desc(a.desc) if a.desc else folder_description(path), "mode": a.mode or "",
-            "allow": list(a.allow or []), "deny_paths": DEFAULT_FOLDER_DENY + list(a.deny or []), "model": ""}
+            "allow": list(a.allow or []), "deny_paths": DEFAULT_FOLDER_DENY + list(a.deny or []), "model": a.model or ""}
         return "added", name
     what, name = reg_edit(edit)
     if what != "same":
@@ -2544,6 +2657,10 @@ def cmd_enable(a):
             if not trusted_market(marketplace_dir()):
                 die("refusing: marketplace %r is not one you added (claude plugin marketplace add ...) nor listed in trusted_marketplaces" % load_market(marketplace_dir()).get("name"), 4)
             reg["entries"][name] = market_entry(market[name], marketplace_dir())
+            if a.mode is not None:
+                reg["entries"][name]["mode"] = a.mode
+            if a.model is not None:
+                reg["entries"][name]["model"] = a.model
             audit_emit("registry_change", {"change": "added", "origin": "marketplace", "revision": audit_revision(reg["entries"][name])},
                        pro=audit_pro(name, reg["entries"][name]), pro_name=name)
             return "enabled (new from the marketplace)"
@@ -2555,6 +2672,11 @@ def cmd_enable(a):
         e["enabled"] = True
         if e.get("kind") != "folder" and name in market:
             e["persona_hash"] = sha(market[name]["skill"])
+        if a.model is not None:
+            e["model"] = a.model
+        if a.mode is not None:
+            e["mode"] = a.mode
+            return "enabled, mode %s" % (a.mode or "(default %s)" % cfg()["default_mode"])
         return "enabled"
     print("%s: %s" % (name, reg_edit(edit)))
     return 0
@@ -2594,6 +2716,59 @@ def cmd_keep(a):
         e["keep"] = True
         return "keep on: never idle-reaped (still counts toward max_live)"
     print("%s: %s" % (name, reg_edit(edit)))
+    return 0
+
+
+RULE_RE = re.compile(r"^[A-Za-z][\w-]{0,80}(\(.{1,400}\))?$")
+
+
+def check_allow_rule(rule, e=None) -> str:
+    """An allow rule the user may add: well formed, and never one that opens a protected path (fails loud)."""
+    if not RULE_RE.match(rule or "") or "\n" in rule:
+        die("not a permission rule: %r (examples: 'Bash(wc *)', 'Write', 'Edit(/srv/data/**)')" % rule, 2, "bad_rule")
+    hit = protected_hit(rule, e)
+    if hit:
+        die("refusing %s: it touches the protected path %s (credentials, deny_paths or pros state); no allow rule and no pros unblock "
+            "can lift that deny rule" % (rule, hit), 4, "protected")
+    return rule
+
+
+def cmd_unblock(a):
+    require_user("unblock professionals", "a professional session cannot widen permissions")
+    name = check_name(a.name)
+    e0 = gate(name, "unblocked")
+    rec = find_session(name)
+    rule = a.allow
+    if not rule:
+        d = st_get(rec["session"]).get("last_denial") if rec else None
+        if not d:
+            die("no denied call recorded for %s; name the rule: pros unblock %s --allow 'Bash(wc *)'" % (name, name), 2)
+        hit = protected_hit(d.get("target"), e0) or protected_hit(d.get("text", ""), e0)
+        if hit:
+            die("refusing: the last denied call of %s (%s %s) touches the protected path %s; pros unblock never lifts that deny rule" % (
+                name, d.get("tool"), str(d.get("target"))[:200], hit), 4, "protected")
+        rule = suggest_rule(d.get("tool", ""), d.get("target", ""))
+    check_allow_rule(rule, e0)
+
+    def edit(reg):
+        e = reg["entries"][name]
+        if rule in e.setdefault("allow", []):
+            return False
+        e["allow"].append(rule)
+        return True
+    added = reg_edit(edit)
+    print("%s: allow rule %s %s" % (name, rule, "added" if added else "was already in its list"))
+    if not rec:
+        print("%s is not running; the rule applies from its next start" % name)
+        return 0
+    with lock(rec["session"], 30):
+        tmux("kill-session", "-t", "=" + rec["session"])  # no task is failed: the restart resends the open one
+        drop_session(rec, "unblocked")
+    if rec.get("scope") == "project" and Path(rec.get("project", "")).is_dir():
+        os.chdir(rec["project"])
+    scope = None if rec.get("scope") == "folder" else rec.get("scope")
+    summon(name, scope, rec.get("mode") if rec.get("explicit_mode") else None, None, rec.get("allow_persona_tools", False))
+    notify(name, "-", "The user unblocked %s for you (pros unblock), and your session was restarted with its history. Retry the call that was denied." % rule)
     return 0
 
 
@@ -2691,12 +2866,20 @@ def deny_rules(extra) -> list:
     return out
 
 
-def build_settings(persona, explicit_mode, mode):
+def bypass_settings(settings, mode):
+    """bypassPermissions: no first-run warning dialog (settings reference: skipDangerousModePermissionPrompt, honoured in a --settings file)."""
+    if mode == BYPASS:
+        settings["skipDangerousModePermissionPrompt"] = True
+    return settings
+
+
+def build_settings(persona, explicit_mode, mode, extra_allow=()):
     c = cfg()
     sandboxed = c["sandbox"] == "on" or (c["sandbox"] == "auto" and sandbox_available())
-    allow, dropped = tools_to_allow(persona["tools"], sandboxed, explicit_mode)
-    allow += ["Bash(pros *)", "Bash(pros)", "Bash(%s *)" % os.path.realpath(__file__)]
+    allow, dropped = tools_to_allow(persona["tools"], sandboxed, explicit_mode or mode == BYPASS)  # narrowing only matters in stricter modes
+    allow += ["Bash(pros *)", "Bash(pros)", "Bash(%s *)" % os.path.realpath(__file__)] + list(extra_allow)
     settings = {"permissions": {"defaultMode": mode, "allow": sorted(set(allow)), "deny": deny_rules(list(c["deny_paths"]) + pro_home_denies())}}
+    bypass_settings(settings, mode)
     if sandboxed:
         settings["sandbox"] = {"enabled": True, "failIfUnavailable": True, "filesystem": {
             "denyRead": [os.path.expanduser(p) for p in DEFAULT_DENY + list(c["deny_paths"]) + pro_home_denies()]}}
@@ -2729,11 +2912,11 @@ def cmd_summon(a):
 def build_folder_settings(e, fpath, mode, info, sandboxed):
     c = cfg()
     allow = ["Bash(pros *)", "Bash(pros)", "Bash(%s *)" % os.path.realpath(__file__)] + list(e.get("allow", []))
-    if not info["allow"]:  # the folder defines no allow rules: the safe baseline, so it can work under dontAsk
+    if not info["allow"]:  # the folder defines no allow rules: the safe baseline, so it can work in a stricter mode (bypass ignores allow rules)
         allow += FOLDER_BASELINE + SAFE_BASH + (SAFE_BASH_SANDBOXED if sandboxed else [])
     rel = [x if x.startswith("/") else str(Path(fpath) / x) for x in e.get("deny_paths", [])]
     denied = list(c["deny_paths"]) + rel + pro_home_denies()
-    settings = {"permissions": {"defaultMode": mode, "allow": sorted(set(allow)), "deny": deny_rules(denied)}}
+    settings = bypass_settings({"permissions": {"defaultMode": mode, "allow": sorted(set(allow)), "deny": deny_rules(denied)}}, mode)
     if sandboxed:
         settings["sandbox"] = {"enabled": True, "failIfUnavailable": True, "filesystem": {
             "denyRead": [os.path.expanduser(p) for p in DEFAULT_DENY + denied]}}
@@ -2776,7 +2959,7 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
         if scope == "project" and not (workdir.parent / ".gitignore").exists():
             (workdir.parent / ".gitignore").write_text("*\n")  # users must never commit .professionals/
         owned = (workdir / ".pro-owned").is_file()
-        settings, dropped, sandboxed = build_settings(persona, explicit or allow_tools, mode)
+        settings, dropped, sandboxed = build_settings(persona, explicit or allow_tools, mode, e.get("allow", []))
     sfile = run_dir("settings", s + ".json")
     write_json(sfile, settings)
     pfile = run_dir("prompts", s + ".md")
@@ -2784,8 +2967,13 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
     sn = "" if (folder or persona["may_summon"] is not False) else "You may NOT summon other professionals; ask your summoner for help instead."
     text = PROTOCOL.format(name=name, summon_note=sn, pros=pro_cmd())
     granted = sorted(a for a in settings.get("permissions", {}).get("allow", []) if not a.startswith("Bash("))
-    text += ("Tools granted to this session: %s%s. If a tool you need is not available in this session, say so in your answer and "
+    if mode == BYPASS:
+        text += ("Tools granted to this session: every tool (permission mode bypassPermissions). Every tool works without asking (Bash, Write, heredocs, your own home); only the protected paths "
+                 "(credentials, deny_paths, the pros state files) stay denied. A denied call is reported to your summoner with the command that fixes it.\n")
+    else:
+        text += ("Tools granted to this session: %s%s. If a tool you need is not available in this session, say so in your answer and "
              "continue with Read; never claim a search you could not run.\n" % (", ".join(granted) or "none", "; refused by the safe list: " + ", ".join(dropped) if dropped else ""))
+        text += "A denied call is reported to your summoner with the command that fixes it (pros unblock); do not work around it.\n"
     if folder:
         text += "Your instructions are the CLAUDE.md of the folder you run in (Claude Code loads it); work inside this folder.\n"
         if not (Path(workdir) / "CLAUDE.md").is_file() and (Path(workdir) / "AGENTS.md").is_file():
@@ -2810,7 +2998,7 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
         args += ["--add-dir", str(project)]
     if not installed_core():
         args += ["--plugin-dir", str(script_root())]
-    mdl = model or e.get("model") or ((persona["model"] if persona["model"] not in ("", "inherit") else "") if persona else "") or c["model"]
+    mdl = resolve_model(model, e, persona, c)
     if mdl:
         args += ["--model", mdl]
     summoner = self_name()
@@ -2826,12 +3014,13 @@ def spawn_session(name, s, e, folder, persona, scope, project, workdir, mode, ex
     if r.returncode != 0:
         die("tmux could not start the session: " + (r.stderr or r.stdout).strip(), 5)
     rec = {"session": s, "name": name, "entry": name, "kind": e["kind"], "scope": scope, "project": str(project), "workdir": str(workdir),
-           "summoner": summoner, "depth": depth, "started": now(), "mode": mode, "allow_persona_tools": bool(allow_tools),
+           "summoner": summoner, "depth": depth, "started": now(), "mode": mode, "explicit_mode": bool(explicit), "allow_persona_tools": bool(allow_tools),
            "sandbox": sandboxed, "dropped_tools": dropped, "owned": owned, "session_id": sid, "run_id": "r-" + uuid.uuid4().hex[:12]}
     if persona:
         rec["persona_hash"] = sha(persona["skill"])
     write_json(run_dir("sessions", s + ".json"), rec)
-    write_json(run_dir("state", s + ".json"), {"state": "starting", "last_activity": now(), "blocks": 0})
+    old = st_get(s) if plan[0] in ("resume", "fork") else {}  # a resumed transcript holds the old denials: never report them twice
+    write_json(run_dir("state", s + ".json"), dict({k: old[k] for k in ("denials_seen", "denials_keys") if k in old}, state="starting", last_activity=now(), blocks=0))
     with open(run_dir("summons.log"), "a") as f:
         f.write(json.dumps({"t": now(), "name": name}) + "\n")
     row = {"ev": "start", "id": sid, "workdir": str(workdir), "entry": name, "run": rec["run_id"]}
@@ -2873,6 +3062,29 @@ def check_may_summon():
             die("%s is not allowed to summon others (may_summon: false)" % me["name"], 4)
 
 
+def resolve_model(model, e, persona, c=None):
+    """--model, then the entry's model, the persona's, config model.  A blocked model (blocked_models) is refused unless it is
+    exactly the model the user stored on this professional's entry (pros add|enable --model): the one per-professional exception."""
+    c = c or cfg()
+    mdl = model or e.get("model") or ((persona["model"] if persona["model"] not in ("", "inherit") else "") if persona else "") or c["model"]
+    hit = next((b for b in c.get("blocked_models") or [] if b and mdl and str(b).lower() in mdl.lower()), None)
+    if hit and mdl != e.get("model"):
+        die("model %s is blocked for professionals (blocked_models: %s); only the user can allow it for one professional: "
+            "pros add <dir> --model %s or pros enable %s --model %s" % (mdl, hit, mdl, e.get("name", "<name>"), mdl), 4, "model_blocked")
+    return mdl
+
+
+def effective_mode(explicit_mode, c=None):
+    """The user's choice (entry/--mode, then config default_mode), else bypassPermissions.  Claude Code refuses bypass as root
+    outside a sandbox, so an unchosen default falls back to dontAsk there instead of a session that cannot start."""
+    c = c or cfg()
+    mode = explicit_mode or c["default_mode"] or BYPASS
+    if mode == BYPASS and not explicit_mode and c["default_mode"] == DEFAULTS["default_mode"] and hasattr(os, "geteuid") and os.geteuid() == 0:
+        print("note: running as root, where Claude Code refuses bypassPermissions; this session uses dontAsk", file=sys.stderr)
+        return "dontAsk"
+    return mode
+
+
 def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False, session=None):
     check_name(name)
     c = cfg()
@@ -2910,7 +3122,8 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
     t0 = now()
     ensure(run_dir())
     explicit_mode = mode or e.get("mode") or None
-    mode = explicit_mode or c["default_mode"]
+    mode = effective_mode(explicit_mode, c)
+    resolve_model(model, e, persona, c)  # refuse a blocked model before anything starts
     with lock(s, c["ready_timeout_s"] + 30):  # one lock per entry covers decide -> record -> spawn (R-V2-4)
         rec = get_rec(s)
         if rec and is_alive(rec):
@@ -3263,6 +3476,8 @@ def cmd_team(a):
     for r in rows:
         if r["reason"]:
             print("* %s: %s" % (r["name"], r["reason"]))
+    if any(r["denied"] for r in rows):
+        print("denied: calls refused by permission rules; the summoner got each one with its fix (user: pros unblock NAME). Protected paths stay denied.")
     return 0
 
 
@@ -3728,7 +3943,7 @@ def build_parser():
     sp = add("summon", cmd_summon, help="start (or reuse) a professional")
     sp.add_argument("name")
     sp.add_argument("--scope", choices=["project", "global"])
-    sp.add_argument("--mode")
+    sp.add_argument("--mode", help="permission mode for this run (default bypassPermissions, or the entry's / config default_mode)")
     sp.add_argument("--model")
     sp.add_argument("--allow-persona-tools", action="store_true",
                     help="grant every tool in the persona's tools line (your explicit choice), keeping the default permission mode")
@@ -3745,13 +3960,19 @@ def build_parser():
     sp.add_argument("--trust-code", action="store_true", help="the folder has hooks/MCP; answer its trust dialog automatically")
     sp.add_argument("--allow", action="append", help="extra permission rule, e.g. 'Bash(go test*)' (runs the repo's code)")
     sp.add_argument("--deny", action="append", help="extra path to deny (relative to the folder)")
-    sp.add_argument("--mode")
+    sp.add_argument("--mode", help="permission mode (default bypassPermissions); a stricter one such as dontAsk or acceptEdits uses the allowlist")
+    sp.add_argument("--model", help="model stored on the entry; the only way to allow a model in blocked_models for this professional")
     sp = add("remove", cmd_remove, help="remove a professional from the list (user only)")
     sp.add_argument("name")
     sp.add_argument("--forget", action="store_true", help="also delete its session history")
     sp.add_argument("--now", action="store_true")
     sp = add("enable", cmd_enable, help="allow a professional (user only)")
     sp.add_argument("name")
+    sp.add_argument("--mode", help="permission mode for this professional (default bypassPermissions; '' resets to config default_mode)")
+    sp.add_argument("--model", help="model stored on the entry ('' clears it); the only way to allow a model in blocked_models for it")
+    sp = add("unblock", cmd_unblock, help="user only: add an allow rule to a professional and restart it with its history")
+    sp.add_argument("name")
+    sp.add_argument("--allow", help="the rule, e.g. 'Bash(wc *)'; default: the rule its last denied call needed. Protected paths never")
     sp = add("disable", cmd_disable, help="forbid a professional (user only)")
     sp.add_argument("name")
     sp.add_argument("--now", action="store_true")
@@ -3765,7 +3986,9 @@ def build_parser():
     sp = add("sessions", cmd_sessions, help="session history of a professional")
     sp.add_argument("name")
     sp.add_argument("--json", action="store_true")
-    sp = add("team", cmd_team)
+    team_help = ("live professionals; DENIED counts tool calls refused by permission rules (in bypassPermissions only "
+                 "the protected-path deny rules refuse); each new denial is sent to the summoner with the fix: pros unblock NAME")
+    sp = add("team", cmd_team, help=team_help, description=team_help)
     sp.add_argument("--json", action="store_true")
     sp = add("send", cmd_send)
     sp.add_argument("to")
