@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.7.0
+
+pros is harness-agnostic (task harness-1126): a professional can run on Claude Code or on the Pi agent with any model Pi has.
+
+- Harness registry: built-ins `claude` (unchanged behaviour) and `pi` (`~/.local/node/bin/pi --mode rpc`, `~/.local/node/bin` put in front of the session's PATH). Config `harnesses` overrides or adds; new `pros harness list [--json]` and, user only, `pros harness add|remove`.
+- Per professional: `pros add <dir> --harness H --model M --thinking T` and `pros enable <name> --harness/--thinking` store `harness`, `model`, `thinking` on the entry; `pros summon --harness/--thinking` for one run. On claude `--thinking` is `--effort`.
+- Pi messaging path is an RPC bridge (`pros bridge`, in the tmux pane): busy/idle from `agent_start`/`agent_settled`, final text as the auto-reply, queued messages delivered as RPC prompts, dialogs cancelled. send/ask/reply/inbox/task ids work across claude and pi both ways.
+- Pi sessions under `PRO_HOME/pi-sessions`, resumed by id (`--session-id`), forked with `--fork`, only within the harness that made them.
+- Models: the no-Fable block (`blocked_models`) applies to claude only; on pi the model comes from the entry or summon, else Pi's own config. Persona and config models are not passed to pi.
+- Deny rules on pi: a per-session Pi extension blocks Pi tool calls that name a protected path, counted in DENIED with the usual note. Known limit: Pi's cursor provider runs tools inside Cursor's own agent, out of reach of that extension; Cursor's own permission config applies.
+- Caller evaluations: new `pros evaluate <task> passed|partial|failed|inconclusive` (the task's caller or the user) records an audit evaluation; new `pros evaluations [name]` (anyone) shows verdicts per professional with harness, model and thinking. The session protocol tells every caller to read them before choosing and to evaluate every answer.
+- `pros team` has HARNESS and MODEL columns; `pros show` prints the harness line.
+- New `skills/professionals/worker-brief.md` (worker brief template, with Grok-medium real-work and Luna-max grunt-work examples); SKILL.md, README, spec 4.6 updated. Tests: `tests/test_v070.py` with a stand-in Pi, `tests/fake_pi.py`.
+
 ## 0.6.1
 
 Automatic unblock (task unblock-auto-1126): a denied call no longer waits for someone to run `pros unblock`.
