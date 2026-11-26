@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.8.0
+
+Ad hoc professionals and three live states (task adhoc-1126, card 1606).
+
+- `pros join <name>`: any plain Claude Code session (for example the lead) joins the bus under a name. It sends as that name; professionals message it with `pros send|ask <name>`; replies, tasks and summoner notes reach it by themselves. Delivery: Stop hook when busy; while idle the new `asyncRewake` Stop hook `pros hook listen` (wakes the model with the message, exit 2), or a paste into its tmux pane (pane checked to still hold the joined process). `pros leave` (or the session's end) moves unread mail to the user's inbox. Not on the list: never summoned or started.
+- `pros team` / `pros list`: `working`, `waiting` (turn over, a command it started still runs: checked in the process tree, not guessed) and `ready`. JSON rows add `activity` and `bg`. A waiting professional is not idle-reaped and not replaced by `--fresh`.
+- Config `adhoc_listen_s` (default 3300). hooks.json gains the listener. Spec 4.7, R6a.
+- Tests: `tests/test_v080.py`; the stub `claude` exports `CLAUDE_CODE_SESSION_ID`/`CLAUDE_PID`, runs typed `RUN <pros args>`, starts `BG <n>` background shells and emulates asyncRewake (`FAKE_REWAKE=1`).
+
 ## 0.7.1
 
 A second name for the same folder (spec 026, 064 T200).

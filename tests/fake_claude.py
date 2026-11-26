@@ -13,7 +13,10 @@ and obeys commands found in the message body, one per line:
   WRITE <path> <txt> a Write tool call is recorded in the transcript
   NOREPLY            do not call pro reply
   CRASH              exit abruptly
-Env switches: FAKE_TRUST=1 trust dialog first, FAKE_IMPORTS=1 external-imports dialog, FAKE_FAIL=1 exit at once,
+  BG <n>             start a background Bash command (a shell like Claude Code's, under shell-snapshots/) that runs n seconds
+A typed prompt `RUN <pros args>` runs pros with those args (a plain session joining the bus: RUN join lead).
+Env switches: FAKE_REWAKE=1 emulate the asyncRewake Stop hook of hooks.json (`pros hook listen` in the background; exit 2 wakes
+the session with its stderr, without a prompt hook), FAKE_TRUST=1 trust dialog first, FAKE_IMPORTS=1 external-imports dialog, FAKE_FAIL=1 exit at once,
 FAKE_LIMIT=1 usage-limit banner, FAKE_NOHOOKS=1 never call hooks, FAKE_IGNORE_ENTER=n|all swallow the first n (or every) Enter.
 Logs go to $FAKE_DIR/<session>.log: START, ACT <id> [dup], MIDTURN <text>.
 """
@@ -24,6 +27,7 @@ import subprocess
 import sys
 import termios
 import time
+import threading
 import tty
 
 FAKE_DIR = os.environ.get("FAKE_DIR", "/tmp")
@@ -81,6 +85,8 @@ class Session:
         elif "--session-id" in a:
             self.sid = a[a.index("--session-id") + 1]
         self.resuming = "--resume" in a
+        self.rewake, self.listener = [], None
+        os.environ["CLAUDE_CODE_SESSION_ID"], os.environ["CLAUDE_PID"] = self.sid, str(os.getpid())  # Claude Code exports both to its Bash tool
         slug = "-fake-" + self.name
         self.transcript = os.path.join(os.path.expanduser("~"), ".claude", "projects", slug, self.sid + ".jsonl")
         os.makedirs(os.path.dirname(self.transcript), exist_ok=True)
@@ -139,6 +145,8 @@ class Session:
                 return subs
             r, _, _ = select.select([sys.stdin], [], [], min(left, 0.1))
             if not r:
+                if self.rewake and not self.working and not subs:
+                    return [("REWAKE", self.rewake.pop(0))]
                 continue
             data = os.read(sys.stdin.fileno(), 4096).decode("utf-8", "replace")
             i = 0
@@ -174,6 +182,14 @@ class Session:
                 self.draw()
             if subs and not self.working:
                 return subs
+        return subs
+
+    def listen(self):
+        payload = json.dumps({"session_id": self.sid, "transcript_path": self.transcript})
+        r = subprocess.run([sys.executable, PRO, "hook", "listen"], input=payload, capture_output=True, text=True)
+        if r.returncode == 2:
+            self.log("REWAKE " + (r.stderr.split()[1][3:] if r.stderr.startswith("[pro-msg") else r.stderr[:40]))
+            self.rewake.append(r.stderr)
 
     def run(self):
         if os.environ.get("FAKE_FAIL") or (os.environ.get("FAKE_FAIL_RESUME") and self.resuming):
@@ -197,7 +213,10 @@ class Session:
             self.draw()
             while True:
                 for text in self.read_input(0.5):
-                    self.turn(text, False)
+                    if isinstance(text, tuple):
+                        self.turn(text[1], False, rewake=True)
+                    else:
+                        self.turn(text, False)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
@@ -238,8 +257,9 @@ class Session:
                     return
                 sys.exit(1)
 
-    def turn(self, text, active):
+    def turn(self, text, active, rewake=False):
         import re
+        import shlex
         while True:
             self.working = True
             self.status("busy")
@@ -247,7 +267,12 @@ class Session:
             self.draw()
             with open(self.transcript, "a") as tf:
                 tf.write(json.dumps({"type": "user", "message": {"role": "user", "content": text}}) + "\n")
-            out = self.hook("userpromptsubmit", {"prompt": text})
+            if not rewake:
+                out = self.hook("userpromptsubmit", {"prompt": text})
+            rewake = False
+            if text.startswith("RUN "):
+                r = subprocess.run([sys.executable, PRO] + shlex.split(text[4:]), capture_output=True, text=True)
+                self.log("RUN %d %s" % (r.returncode, (r.stdout + r.stderr).replace("\n", " ")[:300]))
             m = re.search(r"\[pro-msg id=(m-[0-9a-f]+) from=(\S+) to=(\S+) task=(\S+) kind=(\S+)", text)
             reply, noreply, final = [], False, ""
             if m:
@@ -278,6 +303,15 @@ class Session:
                         noreply = True
                     elif cmd == "CRASH":
                         os._exit(9)
+                    elif cmd == "BG":
+                        snap = os.path.join(FAKE_DIR, "shell-snapshots", "snapshot-bash-fake.sh")
+                        os.makedirs(os.path.dirname(snap), exist_ok=True)
+                        open(snap, "a").close()
+                        p = subprocess.Popen(["/bin/bash", "-c", "source %s 2>/dev/null || true && sleep %s && pwd -P >/dev/null" % (snap, rest)],
+                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        threading.Thread(target=p.wait, daemon=True).start()  # reaped when it ends, as Claude Code does
+                        with open(self.transcript, "a") as tf:
+                            tf.write(json.dumps({"type": "user", "toolUseResult": {"backgroundTaskId": "bg%d" % p.pid}}) + "\n")
                 if kind == "task" and not noreply:
                     body = " | ".join(reply) or "done"
                     subprocess.run([sys.executable, PRO, "reply", task, body], capture_output=True, text=True)
@@ -295,6 +329,9 @@ class Session:
                 continue
             self.status("idle")
             self.draw()
+            if os.environ.get("FAKE_REWAKE") and not os.environ.get("FAKE_NOHOOKS"):
+                self.listener = threading.Thread(target=self.listen, daemon=True)
+                self.listener.start()
             return
 
 

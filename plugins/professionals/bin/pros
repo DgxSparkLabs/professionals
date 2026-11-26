@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.7.1"
+VERSION = "0.8.0"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -59,6 +59,7 @@ POINTER_BYTES = 2048
 REQUIRED_SECTIONS = ["Purpose", "In scope", "Out of scope", "Delegate when", "Tools"]
 
 DEFAULTS = {
+    "adhoc_listen_s": 3300,  # an idle ad hoc session's listener waits this long after its turn for a message (hook timeout 3600)
     "max_live": 6, "max_depth": 4, "idle_reap_min": 30, "deliver_deadline_s": 600,
     "stuck_min": 10, "default_mode": "bypassPermissions", "model": "", "summon_budget_per_hour": 20,
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
@@ -1443,7 +1444,11 @@ def is_alive(rec) -> bool:
 
 
 def self_name() -> str:
-    return os.environ.get("PRO_SELF") or "user"
+    """A professional's name, the name a plain session joined under (`pros join`, matched by its session id), else user."""
+    if os.environ.get("PRO_SELF"):
+        return os.environ["PRO_SELF"]
+    r = adhoc_self()
+    return r["name"] if r else "user"
 
 
 def is_pro() -> bool:
@@ -1476,6 +1481,224 @@ def drop_session(rec, reason="gone"):
         for f in wd.glob(rec["name"] + ".*.json"):
             with contextlib.suppress(OSError):
                 os.unlink(f)
+
+
+# --------------------------------------------------------------------------- activity: working / waiting on a command / ready (0.8.0)
+
+def proc_children() -> dict:
+    """ppid -> [pid] for every process in /proc ({} where /proc cannot be read)."""
+    out = {}
+    with contextlib.suppress(OSError):
+        for d in os.listdir("/proc"):
+            if d.isdigit():
+                with contextlib.suppress(OSError, ValueError, IndexError):
+                    ppid = int(open("/proc/%s/stat" % d).read().rsplit(")", 1)[1].split()[1])
+                    out.setdefault(ppid, []).append(int(d))
+    return out
+
+
+def proc_cmdline(pid) -> str:
+    try:
+        return open("/proc/%d/cmdline" % pid, "rb").read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+    except OSError:
+        return ""
+
+
+def descendants(pid, kids=None) -> list:
+    kids = proc_children() if kids is None else kids
+    out, todo = [], list(kids.get(pid, []))
+    while todo and len(out) < 4096:
+        p = todo.pop()
+        out.append(p)
+        todo += kids.get(p, [])
+    return out
+
+
+SHELL_MARK = "/shell-snapshots/"  # Claude Code runs every Bash tool command as `bash -c source <home>/.claude/shell-snapshots/... && <cmd>`
+
+
+def bg_commands(root_pid) -> list:
+    """The Bash tool commands still running under one Claude Code process tree (pids of the outermost shells).
+    Read when the turn has ended: then every such shell is a command the session started in the background."""
+    if not root_pid:
+        return []
+    kids = proc_children()
+    found = [p for p in descendants(int(root_pid), kids) if SHELL_MARK in proc_cmdline(p)]
+    inner = {c for p in found for c in descendants(p, kids)}
+    return [p for p in found if p not in inner]
+
+
+def pane_pid(s):
+    r = tmux("display-message", "-p", "-t", "=%s:" % s, "#{pane_pid}")
+    return int(r.stdout.strip()) if r.returncode == 0 and r.stdout.strip().isdigit() else None
+
+
+def activity(state, bg) -> str:
+    """What `team` and `list` show: working (in a turn), waiting (turn over, a command it started still runs), ready (free for input)."""
+    if state == "busy":
+        return "working"
+    if state == "idle":
+        return "waiting" if bg else "ready"
+    return state
+
+
+def rec_activity(rec, state=None) -> tuple:
+    state = state or live_state(rec)[0]
+    bg = bg_commands(pane_pid(rec["session"])) if state == "idle" and rec.get("proto", "claude") == "claude" else []
+    return activity(state, bg), bg
+
+
+# --------------------------------------------------------------------------- ad hoc professionals: any session joins the bus (0.8.0)
+
+def adhoc_key(name):
+    return "adhoc-" + name
+
+
+def pid_alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def adhoc_all() -> list:
+    d = run_dir("adhoc")
+    out = []
+    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
+        r = read_json(f)
+        if isinstance(r, dict) and r.get("name"):
+            out.append(r)
+    return out
+
+
+def adhoc_get(name, prune=True):
+    """The live ad hoc record of `name`, or None.  A record whose Claude Code process is gone is closed (its mail goes to the user)."""
+    if not isinstance(name, str) or not NAME_RE.match(name):
+        return None
+    r = read_json(run_dir("adhoc", name + ".json"))
+    if not isinstance(r, dict):
+        return None
+    if r.get("claude_pid") and not pid_alive(r["claude_pid"]):
+        if prune:
+            adhoc_close(r, "gone")
+        return None
+    return r
+
+
+def adhoc_self():
+    """The ad hoc record of the session running this command (matched by CLAUDE_CODE_SESSION_ID), or None in a professional."""
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if is_pro() or not sid:
+        return None
+    return next((r for r in adhoc_all() if r.get("claude_session_id") == sid and adhoc_get(r["name"])), None)
+
+
+def adhoc_by_sid(sid):
+    return next((r for r in adhoc_all() if sid and r.get("claude_session_id") == sid), None) if sid else None
+
+
+def adhoc_close(r, why):
+    """Leave the bus: unread mail of the name goes to the user's inbox, so nothing is lost."""
+    name, key = r["name"], adhoc_key(r["name"])
+    with contextlib.suppress(OSError):
+        os.unlink(run_dir("adhoc", name + ".json"))
+    run_dir("adhoc", name + ".left").write_text(why)
+    moved = 0
+    for m in all_msgs():
+        if m["to"] == name and m["state"] == "queued":
+            m["to"], m["adhoc_left"] = "user", name
+            save_msg(m)
+            ensure(run_dir("inbox"))
+            (run_dir("inbox") / m["id"]).write_text("")
+            moved += 1
+    for sub in ("queue", "delivering"):
+        shutil.rmtree(run_dir(sub, key), ignore_errors=True)
+    st_set(key, state="gone", reason=why)
+    log("adhoc-left", name=name, why=why, moved=moved)
+    return moved
+
+
+def xtmux(r, *args, input=None):
+    """tmux on the server the ad hoc session runs in (its own socket path, never the pros one by name)."""
+    try:
+        return subprocess.run(["tmux", "-S", r["tmux_socket"], *args], input=input, capture_output=True, text=True, env=clean_env(), timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return subprocess.CompletedProcess(args, 1, "", "")
+
+
+def adhoc_pane_ok(r) -> bool:
+    """The recorded pane still holds the Claude Code process that joined (a reused pane is never typed into)."""
+    if not (r.get("tmux_socket") and r.get("tmux_pane") and r.get("claude_pid")):
+        return False
+    p = xtmux(r, "display-message", "-p", "-t", r["tmux_pane"], "#{pane_pid}")
+    if p.returncode != 0 or not p.stdout.strip().isdigit():
+        return False
+    pp = int(p.stdout.strip())
+    return int(r["claude_pid"]) == pp or int(r["claude_pid"]) in descendants(pp)
+
+
+def adhoc_listening(r) -> bool:
+    st = st_get(adhoc_key(r["name"]))
+    return bool(st.get("listen_pid")) and pid_alive(st["listen_pid"]) and float(st.get("listen_until", 0)) > now()
+
+
+def adhoc_post(m, r) -> str:
+    key = adhoc_key(r["name"])
+    m["session"] = key
+    save_msg(m)
+    queue_add(key, m)
+    try:
+        with lock(key, 5):
+            adhoc_deliver(r)
+    except Fail:
+        return "queued"
+    return "delivered" if get_msg(m["id"])["state"] in ("injected", "answered") else "queued"
+
+
+def adhoc_deliver(r) -> bool:
+    """Caller holds lock(adhoc-<name>).  Busy: the Stop hook delivers at the end of the turn.  Idle with the listener armed:
+    it claims the message and wakes the session (asyncRewake).  Idle without it: paste into its tmux pane, as for a professional."""
+    key = adhoc_key(r["name"])
+    st = st_get(key)
+    if not queue_len(key) or st.get("state") == "busy" or adhoc_listening(r) or not adhoc_pane_ok(r):
+        return False
+    raw = xtmux(r, "capture-pane", "-p", "-e", "-t", r["tmux_pane"]).stdout
+    if classify_pane(raw) != "prompt":
+        return False
+    m, dst = queue_claim(key)
+    if not m:
+        return False
+    text = render(m)
+    buf = "pro-" + uuid.uuid4().hex[:6]
+    xtmux(r, "load-buffer", "-b", buf, "-", input=text)
+    xtmux(r, "paste-buffer", "-p", "-d", "-b", buf, "-t", r["tmux_pane"])
+    time.sleep(0.3)
+    xtmux(r, "send-keys", "-t", r["tmux_pane"], "Enter")
+    t0 = now()
+    while now() - t0 < float(cfg()["ack_timeout_s"]):
+        cur = get_msg(m["id"]) or {}
+        if cur.get("state") in ("injected", "answered") or classify_pane(xtmux(r, "capture-pane", "-p", "-e", "-t", r["tmux_pane"]).stdout) == "working":
+            mark_injected(m, "paste", key)
+            with contextlib.suppress(OSError):
+                os.unlink(dst)
+            return True
+        time.sleep(0.2)
+    queue_release(dst)  # never acknowledged: stays queued for the next turn end, the listener or the next prompt
+    return False
+
+
+def adhoc_inject(r, sid) -> list:
+    """Claim every queued message of an ad hoc session (hook route) and mark it delivered: their rendered texts, oldest first."""
+    key, out = adhoc_key(r["name"]), []
+    while True:
+        m, dst = queue_claim(key, "stop-hook")
+        if not m:
+            return out
+        out.append(render(m))
+        mark_injected(m, "stop-hook", key)
+        with contextlib.suppress(OSError):
+            os.unlink(dst)
 
 
 # --------------------------------------------------------------------------- messages
@@ -1628,7 +1851,7 @@ def mark_injected(m, via, s=None):
     try:
         rec = get_rec(s or m.get("session") or "")
         run, sid = audit_run_of(rec)
-        audit_emit("msg_injected", {"via": via if via in ("paste", "stop-hook") else ("stop-hook" if via == "rpc" else "paste"), "attempt": m["inj_n"], "tmux": (rec or {}).get("session") or "pro-unknown",
+        audit_emit("msg_injected", {"via": via if via in ("paste", "stop-hook") else ("stop-hook" if via in ("rpc", "rewake") else "paste"), "attempt": m["inj_n"], "tmux": (rec or {}).get("session") or "pro-unknown",
                                     "dup": bool(m.get("dup"))}, msg=m["id"], pro=audit_pro(m["to"]), run=run, session=sid)
     except Exception:  # noqa: BLE001
         pass
@@ -1649,11 +1872,16 @@ def notify(to, task, text, frm="pro", progress=False):
 
 def post(m) -> str:
     """Store a message and deliver it if the recipient is idle.  Returns inbox|delivered|queued."""
+    if m["to"] != "user" and run_dir("adhoc", m["to"] + ".left").exists() and not adhoc_get(m["to"]):
+        m["adhoc_left"], m["to"] = m["to"], "user"  # that session left the bus: its mail (e.g. a pro's note to its summoner) goes to the user
     if m["to"] == "user":
         save_msg(m)
         ensure(run_dir("inbox"))
         (run_dir("inbox") / m["id"]).write_text("")
         return "inbox"
+    ah = adhoc_get(m["to"])
+    if ah:
+        return adhoc_post(m, ah)
     rec = find_session(m["to"], m.get("project"))
     if not rec:
         save_msg(m)
@@ -1832,6 +2060,8 @@ def fresh_target(to):
         open_ = [m for m in all_msgs() if m["to"] == to and m["kind"] == "task" and m["state"] in ("queued", "injected")]
         if state == "gone":
             return
+        if state == "idle" and rec_activity(rec, state)[1]:
+            state = "waiting on a command it started"
         if state != "idle" or open_ or queue_len(rec["session"]):
             die("%s is %s with %d open task(s); --fresh replaces only an idle session with nothing queued: wait, or send without --fresh" % (to, state, len(open_)), 5)
         stop_session(rec, "stopped")
@@ -1859,18 +2089,21 @@ def do_send(to, body, task=None, kind="task", reply_to=None, wake=False, fallbac
         except Fail:
             audit_refused("not_allowed", fallback, task)
             raise
-    if to != "user":
+    adhoc_to = to != "user" and adhoc_get(to) is not None  # 0.8.0: a joined session is messaged like a live professional, never started
+    if to != "user" and not adhoc_to:
         try:
             gate(to, "messaged")
         except Fail:
             audit_refused("not_allowed", to, task)
             raise
     waking = False
+    if fresh and adhoc_to:
+        die("--fresh starts a new session; %s is a joined session, not a professional pros can start" % to, 2)
     if fresh and to != "user":
         if not wake:
             die("--fresh starts a new session, which --no-wake / wake_on_send=false forbids", 5)
         fresh_target(to)
-    if to != "user" and not find_session(to):
+    if to != "user" and not adhoc_to and not find_session(to):
         if not wake:
             audit_refused("no_target", to, task)
             die("%s is not running; summon it first: pros summon %s" % (to, to), 5)
@@ -1910,7 +2143,7 @@ def do_send(to, body, task=None, kind="task", reply_to=None, wake=False, fallbac
     m["project"] = str(project_root())
     if fallback:
         m["fallback"] = fallback
-    if me == "user" and os.environ.get("CLAUDE_CODE_SESSION_ID"):
+    if not is_pro() and os.environ.get("CLAUDE_CODE_SESSION_ID"):
         m["origin_session"] = os.environ["CLAUDE_CODE_SESSION_ID"]
     audit_msg_created(m)
     if waking:
@@ -2209,6 +2442,14 @@ def pump_inner():
                     deliver_next(rec)
         except Fail:
             continue
+    for r in adhoc_all():
+        r = adhoc_get(r["name"])
+        if r:
+            try:
+                with lock(adhoc_key(r["name"]), 0):
+                    adhoc_deliver(r)
+            except Fail:
+                pass
     for m in all_msgs():
         if m["kind"] == "task" and m["state"] in ("queued", "injected") and now() > m["deadline"] and not m.get("overdue"):
             rec = find_session(m["to"])
@@ -2321,6 +2562,8 @@ def reap() -> list:
                     continue
                 if live_state(rec)[0] != "idle" or queue_len(s):  # re-check right before the kill
                     continue
+                if rec_activity(rec, "idle")[1]:
+                    continue  # waiting on a command it started (its suite, a build): reaping would kill that command
                 audit_emit("reap", {"reason": "idle"}, actor="system", pro=audit_pro(rec["name"]), run=rec.get("run_id"), session=audit_run_of(rec)[1])
                 stop_session(rec, "idle-reaped")
                 out.append(rec["name"])
@@ -2585,6 +2828,12 @@ def cmd_hook(a):
         p = {}
     event = a.event.lower().replace("-", "").replace("_", "")
     _AUDIT["actor"] = "hook"
+    if event == "listen":
+        try:
+            return hook_listen(p)
+        except Exception as e:  # noqa: BLE001
+            log("hook-error", hook=event, err=str(e))
+            return 0
     try:
         if os.environ.get("PRO_SELF") and os.environ.get("PRO_SESSION"):
             pro_hook(event, raw, p)
@@ -2709,7 +2958,7 @@ def auto_reply(s, final, transcript=None):
             m["suppressed"], m["state"] = "task already answered by attempt %d (%s)" % (attempt_no(won), won["id"]), "answered"
             status = save_msg(m) or "stored"
         else:
-            status = post(m) if (target == "user" or find_session(target)) else (save_msg(m) or "stored")
+            status = post(m) if (target == "user" or find_session(target) or adhoc_get(target)) else (save_msg(m) or "stored")
         orig = get_msg(orig["id"]) or orig
         orig["state"], orig["answered_at"], orig["answered_by"] = "answered", now(), "auto-reply"
         save_msg(orig)
@@ -2748,8 +2997,90 @@ def hook_stop(s, p, common):
         st_set(s, state="idle", **common)  # lock busy: stay deliverable, the pump handles the queue
 
 
+def adhoc_hook(event, p, r):
+    """Hooks of a joined (ad hoc) session: the same turn tracking and Stop-hook delivery a professional gets (0.8.0)."""
+    key = adhoc_key(r["name"])
+    common = {"last_activity": now(), "hooks": True}
+    if p.get("transcript_path"):
+        common["transcript_path"] = p["transcript_path"]
+    if event in ("sessionend", "end"):
+        adhoc_close(r, "session ended")
+        return
+    if event in ("sessionstart", "start"):
+        st_set(key, state="idle", blocks=0, **common)
+    elif event in ("userpromptsubmit", "prompt"):
+        for mid in re.findall(r"\[pro-msg id=(m-[0-9a-f]+)", p.get("prompt", "")):
+            m = get_msg(mid)
+            if m:
+                mark_injected(m, "paste", key)  # a pasted message reached the session: acknowledged
+        st_set(key, state="busy", blocks=0, listen_gen=uuid.uuid4().hex[:8], **common)  # a running listener stands down
+        try:
+            with lock(key, 3):
+                out = adhoc_inject(r, p.get("session_id"))
+        except Fail:
+            out = []
+        if out:
+            print("[professionals] messages for %s:\n%s" % (r["name"], "\n---\n".join(out)))
+    elif event == "stop":
+        try:
+            with lock(key, 3):
+                blocks = st_get(key).get("blocks", 0) if p.get("stop_hook_active") else 0
+                m, dst = queue_claim(key, "stop-hook") if blocks < cfg()["max_blocks"] else (None, None)
+                if m:
+                    print(json.dumps({"decision": "block", "reason": render(m)}), flush=True)
+                    mark_injected(m, "stop-hook", key)
+                    with contextlib.suppress(OSError):
+                        os.unlink(dst)
+                    st_set(key, state="busy", blocks=blocks + 1, task=m["task"], **common)
+                    return
+        except Fail:
+            pass
+        st_set(key, state="idle", blocks=0, **common)
+
+
+def hook_listen(p):
+    """asyncRewake Stop hook (hooks.json): in a joined session that has just gone idle, wait for its next message, print it to
+    stderr and exit 2; Claude Code then wakes the model with it.  Exit 0 everywhere else, at once (a professional gets paste)."""
+    if is_pro():
+        return 0
+    r = adhoc_by_sid(p.get("session_id"))
+    if not r or not adhoc_get(r["name"]):
+        return 0
+    key, gen = adhoc_key(r["name"]), uuid.uuid4().hex[:8]
+    until = now() + float(cfg()["adhoc_listen_s"])
+    time.sleep(1.0)  # the synchronous Stop hook of the same turn end settles first (it may deliver a message itself)
+    st_set(key, listen_pid=os.getpid(), listen_gen=gen, listen_until=until)
+    try:
+        while now() < until:
+            st = st_get(key)
+            if st.get("listen_gen") != gen or st.get("state") == "busy" or not adhoc_get(r["name"], prune=False):
+                return 0  # a new turn began, or a newer listener took over, or the session left
+            try:
+                with lock(key, 1):
+                    m, dst = queue_claim(key, "stop-hook")
+                    if m:
+                        sys.stderr.write(render(m) + "\n")
+                        sys.stderr.flush()
+                        mark_injected(m, "rewake", key)
+                        with contextlib.suppress(OSError):
+                            os.unlink(dst)
+                        st_set(key, state="busy", task=m["task"], last_activity=now())
+                        return 2
+            except Fail:
+                pass
+            time.sleep(1.0)
+        return 0
+    finally:
+        st = st_get(key)
+        if st.get("listen_gen") == gen:
+            st_set(key, listen_pid=0)
+
+
 def plain_hook(event, p):
     """Non-professional session: inject pending replies for it (cheap no-op without an inbox)."""
+    r = adhoc_by_sid(p.get("session_id"))
+    if r and adhoc_get(r["name"]):
+        adhoc_hook(event, p, r)
     d = run_dir("inbox")
     if event not in ("userpromptsubmit", "prompt", "sessionstart", "start") or not d.is_dir():
         return
@@ -2811,7 +3142,7 @@ def entry_views(tolerant=True) -> list:
         per = market.get(name)
         rows.append({
             "name": name, "kind": e.get("kind", ""), "state": entry_state(e), "enabled": e.get("enabled", True) is not False,
-            "keep": bool(e.get("keep")), "live": live_state(live[0])[0] if live else "",
+            "keep": bool(e.get("keep")), "live": live_state(live[0])[0] if live else "", "activity": rec_activity(live[0])[0] if live else "",
             "last": ("%s (%s)" % ((last["actual"] or last["id"])[:8], last["reason"] or "open")) if last else "",
             "last_session": (last["actual"] or last["id"]) if last else "", "score": last["score"] if last else "",
             "description": sanitize_desc(e.get("description") or (per or {}).get("description", "")),
@@ -2828,7 +3159,7 @@ def print_view_table(rows):
     for r in rows:
         r["state"] += "*" if r["live"] else ""
     cols = ["name", "kind", "state", "keep", "live", "last", "score", "description"]
-    fmt_table([dict(r, keep="keep" if r["keep"] else "") for r in rows], cols)
+    fmt_table([dict(r, keep="keep" if r["keep"] else "", live=r.get("activity") or r["live"]) for r in rows], cols)
 
 
 def registry_warning():
@@ -3949,7 +4280,7 @@ def cmd_reply(a):
         m["suppressed"], m["state"] = "task already answered by attempt %d (%s)" % (attempt_no(won), won["id"]), "answered"
         save_msg(m)
         status = "stored, not delivered (%s)" % m["suppressed"]
-    elif target != "user" and not find_session(target):
+    elif target != "user" and not find_session(target) and not adhoc_get(target):
         save_msg(m)  # the asker's own wait still finds it; pasting into nobody is pointless
         status = "stored (asker %s is not running)" % target
     else:
@@ -4027,7 +4358,7 @@ def wait_for_inner(task, timeout, me=None, register=True):
                     pump()
                 cur = [m for m in all_msgs() if m["from"] == me and m["task"] == task and m["kind"] == "task"]
                 target = cur[-1]["to"] if cur else target  # a re-run on a fallback moves the wait to it (B2)
-                if target:
+                if target and not adhoc_get(target):  # a joined session answers when it can; only the deadline ends that wait
                     rec = find_session(target)
                     if not rec:
                         if reply_for(me, task):
@@ -4075,7 +4406,7 @@ def cmd_ask(a):
         print("note: --wait clamped to %ds (the Bash tool kills longer commands); use pros wait to continue" % cap, file=sys.stderr)
         wait = cap
     me = self_name()
-    if a.to not in ("user", me):
+    if a.to not in ("user", me) and not adhoc_get(a.to):
         check_name(a.to, "recipient")
         gate(a.to, "messaged")  # allowlisted professionals only; anything else is refused here
         if a.fresh:
@@ -4121,11 +4452,15 @@ def cmd_team(a):
             continue
         st = st_get(s)
         den = transcript_denials(st["transcript_path"]) if st.get("transcript_path") else dict(st.get("pi_denials") or {})
-        rows.append({"name": rec["name"], "session": s, "scope": rec["scope"], "state": state, "reason": reason,
+        act, bg = rec_activity(rec, state)
+        if bg and not reason:
+            reason = "turn over; %d command(s) it started still run (pid %s)" % (len(bg), ",".join(map(str, bg[:3])))
+        rows.append({"name": rec["name"], "session": s, "scope": rec["scope"], "state": state, "reason": reason, "activity": act, "bg": len(bg),
                      "harness": rec.get("harness", "claude"), "model": rec.get("model") or st.get("pi_model") or "", "thinking": rec.get("thinking") or "",
                      "task": st.get("task", "") if state == "busy" else "", "summoner": rec.get("summoner", ""),
                      "age_s": int(now() - rec["started"]), "queued": queue_len(s), "denied": den,
                      "workdir": rec["workdir"], "agents_status": agents_status().get(s, "")})
+    rows += adhoc_rows()
     if a.json:
         print(json.dumps(rows, indent=1))
         return 0
@@ -4135,15 +4470,86 @@ def cmd_team(a):
     for r in rows:
         r["age"] = age(r["age_s"])
         r["denied"] = ",".join("%s x%d" % kv for kv in r["denied"].items())
-        r["state"] += "*" if r["reason"] else ""
+        r["state"] = r["activity"] + ("*" if r["reason"] else "")
         r["model"] = (r["model"] or "-") + (":" + r["thinking"] if r["thinking"] else "")
     fmt_table(rows, ["name", "harness", "model", "scope", "state", "task", "summoner", "age", "queued", "denied"])
     for r in rows:
         if r["reason"]:
             print("* %s: %s" % (r["name"], r["reason"]))
+    print("state: working = in a turn; waiting = turn over but a command it started still runs (not free); ready = free for input")
     if any(r["denied"] for r in rows):
         print("denied: calls refused by permission rules; with auto_unblock on pros lifted them itself, else the summoner got the fix (user: pros unblock NAME). Protected paths stay denied.")
     return 0
+
+
+def cmd_join(a):
+    """0.8.0: this Claude Code session joins the bus as an ad hoc professional: messages to NAME reach it, also when it is idle."""
+    if is_pro():
+        die("a professional already has its name (%s); join is for a plain session" % os.environ.get("PRO_SELF"), 4, "user_only")
+    require_user("join the bus under a name", "a professional session already has its name")
+    name = check_name(a.name)
+    sid = a.session_id or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    pid = a.pid or os.environ.get("CLAUDE_PID")
+    if not sid or not pid:
+        die("run pros join from inside a Claude Code session (its Bash tool sets CLAUDE_CODE_SESSION_ID and CLAUDE_PID), or pass --session-id and --pid", 2)
+    if not pid_alive(pid):
+        die("process %s is not running" % pid, 2)
+    reg, _ = reg_get(tolerant=True)
+    try:
+        market = {x["name"] for x in personas(marketplace_dir())}
+    except Fail:
+        market = set()
+    if name in reg["entries"] or name in market:
+        die("the name %r is a professional on your list or in a marketplace; join under another name" % name, 2, "name_clash")
+    old = adhoc_get(name)
+    if old and old.get("claude_session_id") != sid:
+        die("%s is joined by another live session (%s); choose another name, or pros leave %s there" % (name, old["claude_session_id"][:8], name), 2, "name_clash")
+    for r in adhoc_all():
+        if r.get("claude_session_id") == sid and r["name"] != name:
+            adhoc_close(r, "renamed to " + name)  # one name per session
+    tm = os.environ.get("TMUX", "")
+    rec = {"name": name, "claude_session_id": sid, "claude_pid": int(pid), "cwd": os.getcwd(), "joined": now(),
+           "tmux_socket": tm.split(",")[0] if tm and not a.no_pane else "", "tmux_pane": os.environ.get("TMUX_PANE", "") if tm and not a.no_pane else ""}
+    write_json(run_dir("adhoc", name + ".json"), rec)
+    with contextlib.suppress(OSError):
+        os.unlink(run_dir("adhoc", name + ".left"))
+    st_set(adhoc_key(name), state="busy", last_activity=now())  # this very command runs inside a turn
+    routes = ["Stop hook at the end of each turn and the listener hook while idle (when the professionals plugin is loaded)"]
+    if rec["tmux_pane"]:
+        routes.append("paste into tmux pane %s while idle" % rec["tmux_pane"])
+    print("joined as %s (session %s). Messages to %s reach this session: %s." % (name, sid[:8], name, "; ".join(routes)))
+    print("Others reach you with: pros send %s \"...\"; you send and reply as %s. Leave with: pros leave" % (name, name))
+    if not rec["tmux_pane"]:
+        print("note: not in tmux; without the plugin's hooks an idle session is not woken (pros inbox shows what waits)")
+    return 0
+
+
+def cmd_leave(a):
+    r = adhoc_get(a.name) if a.name else adhoc_self()
+    if not r:
+        die("%s is not joined" % (a.name or "this session"), 1, "not_listed")
+    if is_pro():
+        die("only the user's own sessions leave the bus", 4, "user_only")
+    moved = adhoc_close(r, "left")
+    print("left: %s (%d unread message(s) moved to the user's inbox)" % (r["name"], moved))
+    return 0
+
+
+def adhoc_rows() -> list:
+    rows = []
+    for r in adhoc_all():
+        if not adhoc_get(r["name"]):
+            continue
+        key = adhoc_key(r["name"])
+        st = st_get(key)
+        hs = st.get("state") or "idle"
+        bg = bg_commands(r["claude_pid"]) if hs != "busy" else []
+        rows.append({"name": r["name"], "session": key, "scope": "adhoc", "state": "busy" if hs == "busy" else "idle", "reason": "",
+                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "",
+                     "task": st.get("task", "") if hs == "busy" else "", "summoner": "-", "age_s": int(now() - float(r.get("joined", now()))),
+                     "queued": queue_len(key), "denied": {}, "workdir": r.get("cwd", ""), "agents_status": "",
+                     "wake": "listener" if adhoc_listening(r) else ("tmux" if r.get("tmux_pane") else "hooks")})
+    return rows
 
 
 def cmd_stop(a):
@@ -4687,6 +5093,13 @@ def build_parser():
                  "the protected-path deny rules refuse); each new denial is sent to the summoner with the fix: pros unblock NAME")
     sp = add("team", cmd_team, help=team_help, description=team_help)
     sp.add_argument("--json", action="store_true")
+    sp = add("join", cmd_join, help="this Claude Code session joins the bus under a name: messages to it arrive, also when idle")
+    sp.add_argument("name")
+    sp.add_argument("--session-id", help="the Claude Code session id (default: $CLAUDE_CODE_SESSION_ID)")
+    sp.add_argument("--pid", help="the Claude Code process id (default: $CLAUDE_PID)")
+    sp.add_argument("--no-pane", action="store_true", help="never paste into this session's tmux pane (hooks only)")
+    sp = add("leave", cmd_leave, help="leave the bus (unread messages go to the user's inbox)")
+    sp.add_argument("name", nargs="?")
     sp = add("send", cmd_send)
     sp.add_argument("to")
     sp.add_argument("text")
