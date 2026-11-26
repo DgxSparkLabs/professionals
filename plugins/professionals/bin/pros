@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.4"
+VERSION = "0.8.5"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -1074,7 +1074,7 @@ def classify_pane(raw: str) -> str:
     plain = ANSI_ANY.sub("", raw)
     lines = [l.rstrip() for l in plain.splitlines() if l.strip()]
     tail = "\n".join(lines[-14:])
-    if "[pro: exited" in tail:
+    if lines and EXITED_RE.match(lines[-1].strip()):  # 0.8.5: only the shell's own last line; "[pro: exited" in shown output is not an exit
         return "gone"
     if "Yes, I trust this folder" in plain:
         return "trust"
@@ -1094,6 +1094,7 @@ def classify_pane(raw: str) -> str:
     return "unknown"
 
 
+EXITED_RE = re.compile(r"^\[pro: exited -?\d+\]$")
 IMPORTS_RE = re.compile(r"allow external (?:CLAUDE\.md )?(?:file )?imports", re.I)
 
 
@@ -4340,6 +4341,8 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
             return 0
         if rec:
             drop_session(rec, "died")
+        if has_session(s) and classify_pane(capture(s, ansi=True)) == "gone":  # 0.8.5: an exited pane lingers 20 s; it blocked the new start
+            tmux("kill-session", "-t", "=" + s)
         hist_reconcile(name, {r.get("session_id") for r in live_for(name)})
         if folder:
             warn_same_folder(workdir, agents_live())
@@ -4429,8 +4432,17 @@ def resend_unanswered(rec):
     `resends` on the message counts them; after max_resends (default 1), or once its deadline passed, the task fails
     and the sender gets one note, so a crash loop can never redeliver it without end.  Answered tasks never."""
     cap = int(cfg()["max_resends"])
-    for m in all_msgs():
+    ms = all_msgs()
+    replied = {}  # 0.8.5: task -> newest reply this professional sent; a task message older than it was answered
+    for m in ms:
+        if m["from"] == rec["name"] and m["kind"] == "reply":
+            replied[m["task"]] = max(replied.get(m["task"], 0), m["created"])
+    for m in ms:
         if m["to"] != rec["name"] or m["kind"] != "task" or m["state"] != "injected":
+            continue
+        if replied.get(m["task"], -1) >= m["created"]:
+            m["state"], m["answered_at"] = "answered", now()
+            save_msg(m)
             continue
         n = int(m.get("resends", 0))
         why = "its deadline passed" if now() > m["deadline"] else ("already resent %d of max_resends %d" % (n, cap) if n >= cap else "")
@@ -4522,6 +4534,11 @@ def cmd_reply(a):
     audit_emit("msg_answered", {"answered_by": "reply", "reply_msg": m["id"]}, msg=orig["id"], pro=audit_pro(orig["to"]))
     if not won:
         close_other_attempts(orig, m["id"])
+    for x in [x for x in cands if x["id"] != orig["id"] and x["state"] == "injected"]:  # 0.8.5: add-ons sent under the same task id
+        x = get_msg(x["id"]) or x
+        x["state"], x["answered_at"] = "answered", now()
+        save_msg(x)
+        audit_emit("msg_answered", {"answered_by": "reply", "reply_msg": m["id"]}, msg=x["id"], pro=audit_pro(x["to"]))
     print("replied %s task=%s to=%s status=%s" % (m["id"], a.task, target, status))
     return 0
 

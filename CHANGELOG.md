@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.8.5
+
+- A summon right after a professional's program exited started nothing: the exited pane stays open for 20 s
+  (`[pro: exited N]`) and tmux refused the new session ("duplicate session"). pros now closes an exited pane before it
+  starts the new run; a live session is still reused. The new run keeps the model and thinking it was summoned with
+  (checked live on two voice pros: `--model claude-opus-5-5 --effort high` after the restart, transcript model the same).
+- A live professional was taken for exited when its screen showed the text `[pro: exited` (a grep of pros, a test it
+  wrote): summon dropped its record as "died" and tried to start it again. Only the shell's own last line
+  `[pro: exited N]` counts now.
+- A restart resent tasks answered long before. One reply closed only one message of a task, so add-ons sent under the same
+  task id stayed open. A reply now closes every delivered message of its task, and a restart never resends a task
+  message older than the professional's last reply to that task; only the task in flight is resent.
+
 ## 0.8.4
 
 No professional on a model nobody chose (card 1586: professionals were seen on Fable).

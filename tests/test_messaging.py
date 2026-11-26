@@ -149,7 +149,8 @@ class Messaging(ProTestCase):
         self.summon("alpha")
         r = self.pro("ask", "alpha", "SLEEP 1\nCRASH", "--wait", "20")
         self.assertEqual(r.returncode, 5, r.stdout + r.stderr)
-        self.assertIn("stuck", r.stdout)
+        # 0.8.5: the retry now really starts (before, the exited pane blocked it and only "stuck" came back); it crashes too
+        self.assertIn("attempt 2 of 2 failed (alpha died while handling it)", r.stdout)
 
     def test_send_to_missing_session_refused(self):
         r = self.pro("send", "beta", "hi", "--no-wake")  # 0.4.0: without --no-wake, send starts it (test_v040)
