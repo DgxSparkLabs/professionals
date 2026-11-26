@@ -35,6 +35,7 @@ class FolderSummon(ProTestCase):
         self.assertNotIn("OTHER-AGENTS-TEXT", self.argv_info("pro-both")["--append-system-prompt-file"])
 
     def test_baseline_permissions_and_deny_list(self):
+        self.config({"default_mode": "dontAsk"})  # 0.6.0: the default is bypassPermissions; this pins the strict path
         d = self.make_folder("perm")
         self.ok("add", d, "--deny", "data/store")
         self.summon("perm")

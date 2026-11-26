@@ -8,6 +8,7 @@ from helpers import *
 
 class Summon(ProTestCase):
     def test_new_reuse_and_files(self):
+        self.config({"default_mode": "dontAsk"})  # 0.6.0: the default is bypassPermissions; this pins the strict path
         r = self.summon("alpha")
         self.assertIn("reused=no", r.stdout)
         self.assertIn("ignored-tools=Bash(rm -rf /)", r.stdout)

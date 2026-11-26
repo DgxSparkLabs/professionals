@@ -156,8 +156,11 @@ in the env but I found no reader **[unverified]**. Exit codes: 0 ok, 1 error, 2 
 ## 7. Security model
 
 Threat: a peer message or fetched page makes a professional act beyond what the user allowed.
-1. **Permission mode.** Default `dontAsk` (`default_mode`): anything not allow-listed is denied without
-   a prompt, so a headless session cannot hang on a dialog. `--mode` overrides and then the persona's
+1. **Permission mode.** Default `bypassPermissions` since 0.6.0 (`default_mode`; spec 4.5): every tool
+   works, deny rules (item 3) still block, and `skipDangerousModePermissionPrompt` keeps the first-run
+   dialog away. A stricter mode (`dontAsk` and others) is the user's choice per entry or in config; a
+   denied call reaches the summoner with its fix, `pros unblock`. Under `dontAsk`, anything not
+   allow-listed is denied without a prompt, so a headless session cannot hang on a dialog. `--mode` overrides and then the persona's
    `tools:` list is granted as written (`explicit_mode`, :1197).
 2. **Allowlist.** Built per session into `run/settings/<s>.json` (`build_settings`, :1214). Persona
    `tools:` are filtered to `SAFE_TOOLS` (Read, Glob, Grep, Edit, Write, NotebookEdit, WebFetch,

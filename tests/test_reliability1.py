@@ -302,6 +302,7 @@ class AllowPersonaTools(ProTestCase):
         return json.load(open(os.path.join(self.fakedir, s + ".argv.json")))
 
     def test_default_drops_and_flag_grants_without_changing_mode(self):
+        self.config({"default_mode": "dontAsk"})  # 0.6.0: the default is bypassPermissions; this pins the strict path
         r = self.summon("alpha")
         self.assertIn("ignored-tools=Bash(rm -rf /)", r.stdout)
         self.assertNotIn("Bash(rm -rf /)", json.loads(self.settings()["--settings"])["permissions"]["allow"])
