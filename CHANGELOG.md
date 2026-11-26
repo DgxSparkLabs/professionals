@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.6.1
+
+Automatic unblock (task unblock-auto-1126): a denied call no longer waits for someone to run `pros unblock`.
+
+- The pump applies the unblock itself for a new denied call that no deny rule caused: it adds the suggested rule to the entry, restarts the professional with its history (open task resent once), tells it to retry, and sends the summoner one line. It runs in a process of its own (`pros auto-unblock`, hidden), since the pump can run inside the session being restarted.
+- Deny-rule hits (credentials, `DEFAULT_DENY`, `deny_paths`, pros state) stay blocked and are reported as before. A rule already on the entry is not applied again (no restart loop): the usual note goes out.
+- Switch: config `auto_unblock` (default `true`); per professional `pros add <dir> --auto-unblock on|off` and `pros enable <name> --auto-unblock on|off` (user only); `pros show` prints it.
+- Audit: `registry_change` gains change `unblocked` (actor `pump` for automatic, `user` for `pros unblock`); `docs/spec/audit/schemas/event-v1.json` updated.
+- Tests: `tests/test_v061.py`. Two 0.6.0 tests of the manual path now set `auto_unblock: false`, since the default changed.
+
 ## 0.6.0
 
 Professionals run in `bypassPermissions` by default (task bypass-1126): professionals were stuck on denied `wc -l`, heredocs and a Write in their own home.

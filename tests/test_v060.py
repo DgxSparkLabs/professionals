@@ -173,7 +173,7 @@ class Unblock(ProTestCase):
         return [m for m in self.msgs() if m["to"] == "user" and m["kind"] == "note"]
 
     def test_denial_sends_one_note_with_the_fix(self):
-        self.config({"default_mode": "dontAsk"})
+        self.config({"default_mode": "dontAsk", "auto_unblock": False})  # 0.6.1: the manual path
         self.summon("alpha")
         self.deny_call("alpha", "Bash", {"command": "wc -l notes.txt"}, "toolu_a1")
         self.ok("pump")
@@ -200,7 +200,7 @@ class Unblock(ProTestCase):
         self.assertIn("protected", r.stderr)
 
     def test_unblock_adds_rule_restarts_with_history_and_says_retry(self):
-        self.config({"default_mode": "dontAsk"})
+        self.config({"default_mode": "dontAsk", "auto_unblock": False})  # 0.6.1: the manual path
         self.summon("alpha")
         s = self.deny_call("alpha", "Bash", {"command": "wc -l notes.txt"}, "toolu_u1")
         self.ok("pump")
