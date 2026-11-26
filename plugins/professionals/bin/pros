@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.7"
+VERSION = "0.8.8"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -1512,10 +1512,7 @@ def live_state(rec, pane=None) -> tuple:
     if hs == "busy" and c == "prompt" and ag0 == "idle" and now() - float(st.get("last_activity", 0)) > 8:
         return "idle", "hook state lagging; claude agents says idle"
     if hs == "busy" or c == "working":
-        last = float(st.get("last_activity", rec.get("started", now())))
-        tp = st.get("transcript_path")
-        if tp and os.path.exists(tp):
-            last = max(last, os.path.getmtime(tp))
+        last = last_activity_t(rec, st)
         if now() - last > cfg()["stuck_min"] * 60:
             return "stuck", "busy, no activity for %d min" % ((now() - last) // 60)
         return "busy", ""
@@ -1527,6 +1524,19 @@ def live_state(rec, pane=None) -> tuple:
     if age > cfg()["ready_timeout_s"] * 2:
         return "stuck", "never became ready"
     return "starting", ""
+
+
+def last_activity_t(rec, st=None) -> float:
+    """When a session last did something: its last hook, or its transcript's last write (tool calls and results)."""
+    st = st_get(rec["session"]) if st is None else st
+    last = float(st.get("last_activity", rec.get("started", now())))
+    tp = st.get("transcript_path")
+    if tp and os.path.exists(tp):
+        last = max(last, os.path.getmtime(tp))
+    return last
+
+
+TURN_ACTIVE_S = 120  # 0.8.8: a turn with activity this recent is still working on its task
 
 
 def bridge_state(rec, c) -> tuple:
@@ -2608,9 +2618,14 @@ def pump_inner():
 
 def extend_deadline(m, rec) -> bool:
     """0.8.7: at its deadline, a task whose professional ended its turn but still waits on a command it started (a test run in
-    a background shell) does not time out: it is not idle.  (One still in its turn keeps 0.4.0's timeout note.)  The deadline moves by deliver_deadline_s, up to deadline_extend_max_s past the first one; the sender gets one note."""
+    a background shell) does not time out: it is not idle.  0.8.8: nor one still in its turn with activity in the last 2 min;
+    a turn quiet for longer keeps 0.4.0's timeout note.  The deadline moves by deliver_deadline_s, up to deadline_extend_max_s past the first one; the sender gets one note."""
+    if m.get("fallback"):
+        return False  # the sender named a fallback: deadline_failover runs it in parallel, as before
     act = rec_activity(rec)[0]
-    if act != "waiting" or st_get(rec["session"]).get("task") != m["task"]:
+    if act == "working" and now() - last_activity_t(rec) > TURN_ACTIVE_S:
+        return False  # 0.8.8: in its turn but quiet for over 2 min: the timeout note, as before
+    if act not in ("working", "waiting") or st_get(rec["session"]).get("task") != m["task"]:
         return False
     first = float(m.get("first_deadline", m["deadline"]))
     if now() - first >= float(cfg()["deadline_extend_max_s"]):
@@ -2620,8 +2635,9 @@ def extend_deadline(m, rec) -> bool:
     m["deadline"] = min(now() + float(cfg()["deliver_deadline_s"]), first + float(cfg()["deadline_extend_max_s"]))
     save_msg(m)
     if not noted:
-        notify(m["from"], m["task"], "task %s to %s passed its deadline, but %s is still waiting on a command it started: no timeout; the deadline moves, up to %d min past the first one" % (
-            m["task"], m["to"], m["to"], int(cfg()["deadline_extend_max_s"]) // 60))
+        doing = "still in its turn (activity in the last 2 min)" if act == "working" else "still waiting on a command it started"
+        notify(m["from"], m["task"], "task %s to %s passed its deadline, but %s is %s: no timeout; the deadline moves, up to %d min past the first one" % (
+            m["task"], m["to"], m["to"], doing, int(cfg()["deadline_extend_max_s"]) // 60))
     return True
 
 

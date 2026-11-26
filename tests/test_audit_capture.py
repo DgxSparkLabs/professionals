@@ -515,7 +515,8 @@ class StubRuns(ProTestCase):
             self.assertNotIn(canary, blob)
 
     def test_overdue_and_late_reply_and_pending(self):
-        self.config({"deliver_deadline_s": 2})
+        # 0.8.8: a busy target with recent activity gets its deadline moved; a 0 cap keeps the deadline miss under test
+        self.config({"deliver_deadline_s": 2, "deadline_extend_max_s": 0})
         self.summon("alpha")
         s = [x for x in self.sessions_alive() if x.startswith("pro-alpha")][0]
         r = self.ok("send", "alpha", "SLEEP 5\nECHO late", "--task", "late-1")

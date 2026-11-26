@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.8.8
+
+- The 0.8.7 deadline rule also covers a professional still in its turn when it shows activity in the last 2 minutes (a
+  hook, or a write to its transcript: tool calls and results): the deadline moves, one note, same `deadline_extend_max_s`
+  cap. A turn quiet for longer still gets the timeout note (`target state: working`); one quiet for `stuck_min` is stuck.
+  A task sent with `--fallback` is never extended: its fallback still runs in parallel at the deadline.
+
 ## 0.8.7
 
 - A task timed out with "target state: idle" while its professional had ended its turn and waited on a test run in a
