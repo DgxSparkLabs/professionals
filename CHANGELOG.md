@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.8.7
+
+- A task timed out with "target state: idle" while its professional had ended its turn and waited on a test run in a
+  background shell (pane: "1 shell still running"). Such a professional is not idle: at the deadline pros moves the
+  deadline by `deliver_deadline_s` (up to `deadline_extend_max_s`, default 7200 s, past the first one) and tells the
+  sender once; after the cap the timeout note says `target state: waiting`. One still in its turn keeps the timeout note.
+- `pros pick`: when the only professionals with verdicts on the kind are busy, it names them (`busy: NAME (working; ...)`,
+  JSON `busy`) and picks none, instead of an arbitrary free one.
+
 ## 0.8.6
 
 - Verdicts are used (card 1563, learn and grow). `pros pick --for "<kind of job>"` returns the best free professional for

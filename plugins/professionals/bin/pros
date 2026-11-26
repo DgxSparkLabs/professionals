@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.6"
+VERSION = "0.8.7"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -64,7 +64,7 @@ DEFAULTS = {
     "stuck_min": 10, "default_mode": "bypassPermissions", "model": "", "summon_budget_per_hour": 20,
     "task_msg_cap": 20, "max_blocks": 10, "ready_timeout_s": 60, "ack_timeout_s": 15,
     "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
-    "publish_guard": "", "resume_max_days": 14, "max_resends": 1, "max_attempts": 2,
+    "publish_guard": "", "resume_max_days": 14, "max_resends": 1, "max_attempts": 2, "deadline_extend_max_s": 7200,
     "wake_on_send": True, "failover": True, "msg_retention_days": 30,
     "auto_unblock": True,  # a denial that no deny rule caused is unblocked by pros itself (entry auto_unblock: false turns it off)
     "blocked_models": ["fable"],  # a model whose name contains one of these runs only when the user stored it on that professional's entry
@@ -2568,6 +2568,8 @@ def pump_inner():
     for m in all_msgs():
         if m["kind"] == "task" and m["state"] in ("queued", "injected") and now() > m["deadline"] and not m.get("overdue"):
             rec = find_session(m["to"])
+            if m["state"] == "injected" and rec and extend_deadline(m, rec):
+                continue
             if deadline_failover(m, rec):
                 continue
             m["overdue"] = True
@@ -2578,7 +2580,8 @@ def pump_inner():
             audit_emit("msg_overdue", {"deadline": m["deadline"], "observed_by": _AUDIT["observer"]}, msg=m["id"], pro=audit_pro(m["to"]))
             if was_queued:
                 audit_msg_failed(m, "deadline_before_delivery")
-            why = live_state(rec)[0] if rec else "gone"
+            why = rec_activity(rec)[0] if rec else "gone"
+            why = "idle" if why == "ready" else why  # 0.8.7: "waiting" (on a command it started) is not "idle"
             last = " (attempt %d of %d; no attempts left)" % (attempt_no(m), max_attempts()) if max_attempts() > 1 and attempt_no(m) > 1 else ""
             notify(m["from"], m["task"], "timeout: task %s to %s got no answer by its deadline (target state: %s)%s" % (m["task"], m["to"], why, last))
     for m in all_msgs():
@@ -2601,6 +2604,25 @@ def pump_inner():
         pst.write_text(str(now()))
         with contextlib.suppress(Exception):
             prune_msgs()
+
+
+def extend_deadline(m, rec) -> bool:
+    """0.8.7: at its deadline, a task whose professional ended its turn but still waits on a command it started (a test run in
+    a background shell) does not time out: it is not idle.  (One still in its turn keeps 0.4.0's timeout note.)  The deadline moves by deliver_deadline_s, up to deadline_extend_max_s past the first one; the sender gets one note."""
+    act = rec_activity(rec)[0]
+    if act != "waiting" or st_get(rec["session"]).get("task") != m["task"]:
+        return False
+    first = float(m.get("first_deadline", m["deadline"]))
+    if now() - first >= float(cfg()["deadline_extend_max_s"]):
+        return False
+    noted = m.get("extended", 0)
+    m["first_deadline"], m["extended"] = first, noted + 1
+    m["deadline"] = min(now() + float(cfg()["deliver_deadline_s"]), first + float(cfg()["deadline_extend_max_s"]))
+    save_msg(m)
+    if not noted:
+        notify(m["from"], m["task"], "task %s to %s passed its deadline, but %s is still waiting on a command it started: no timeout; the deadline moves, up to %d min past the first one" % (
+            m["task"], m["to"], m["to"], int(cfg()["deadline_extend_max_s"]) // 60))
+    return True
 
 
 def deadline_failover(m, rec) -> bool:
@@ -4865,9 +4887,14 @@ def strengths(name, ms) -> tuple:
 def cmd_pick(a):
     """0.8.6 (card 1563): the best free professional for a kind of job, from the verdicts on it."""
     ms, t = all_msgs(), now()
-    rows = []
+    rows, busy = [], []
     for v in entry_views():
-        if not v["enabled"] or v["live"] not in ("", "idle") or v.get("activity") in ("working", "waiting"):
+        if not v["enabled"]:
+            continue
+        if v["live"] not in ("", "idle") or v.get("activity") in ("working", "waiting"):  # 0.8.7: kept, to name when none is free
+            b = pick_standing(v["name"], a.job, ms, t)
+            if b["on_kind"] and not b["blocked"]:
+                busy.append(dict(b, activity=v.get("activity") or v["live"]))
             continue
         if v["state"] != "enabled" and v["live"] != "idle":  # a changed folder starts only after the user's review; a live one takes work
             continue
@@ -4879,13 +4906,21 @@ def cmd_pick(a):
     for p in rows:
         p["rank_score"] = p["score"] if known else p["all_score"]
     free = sorted([p for p in rows if not p["blocked"]], key=lambda p: (-p["rank_score"], -p["fit"], p["busy_min"], p["name"]))
+    busy.sort(key=lambda p: (-p["score"], p["name"]))
+    wait = bool(busy) and not known  # 0.8.7: the ones with verdicts on the kind are all busy: name them, no arbitrary free one
     if a.json:
-        print(json.dumps({"job": a.job, "by": "kind" if known else "all verdicts", "pick": free[0]["name"] if free else "",
-                          "ranked": free, "blocked": [p for p in rows if p["blocked"]]}, indent=1))
-        return 0 if free else 1
+        print(json.dumps({"job": a.job, "by": "kind" if known or wait else "all verdicts", "pick": free[0]["name"] if free and not wait else "",
+                          "ranked": [] if wait else free, "busy": busy, "blocked": [p for p in rows if p["blocked"]]}, indent=1))
+        return 0 if free and not wait else 1
     for p in rows:
         if p["blocked"]:
             print("skip %s: %d bad verdicts on '%s' since its last good one there" % (p["name"], p["bads_since_good"], a.job))
+    if wait:
+        for b in busy:
+            print("busy: %s (%s; %d verdicts on '%s': %d good, %d neutral, %d bad, score %.2f)" % (
+                b["name"], b["activity"], b["on_kind"], a.job, b["good"], b["neutral"], b["bad"], b["score"]))
+        print("no free professional has verdicts on '%s'; wait for one, or queue the task: pros send %s ..." % (a.job, busy[0]["name"]))
+        return 1
     if not free:
         print("no free professional for '%s'" % a.job)
         return 1
