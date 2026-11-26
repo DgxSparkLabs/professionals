@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.9.0
+
+- The pump loop (`pros pump --loop`, the `pros-pump` tmux session) re-execs itself when its script changes on disk.
+  Seen live: a task timed out with `target state: idle` while its professional waited on its own suite, a case 0.8.7
+  extends; the timeout came from a loop started hours before 0.8.7 and still running the code it loaded then.
+
 ## 0.8.9
 
 - A denial note never suggests an interpreter wildcard (seen live: `--allow 'Bash(python3 *)'` for a `python3 -c` one-liner

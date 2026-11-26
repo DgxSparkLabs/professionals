@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.9"
+VERSION = "0.9.0"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -5102,13 +5102,29 @@ def ensure_pump():
     tmux(*cmd, "sh", "-c", "exec %s pump --loop" % pro_cmd())
 
 
+def script_id(path):
+    """What changes when a script is replaced or edited (git checkout writes a new file): inode, size, mtime.  None if unreadable."""
+    try:
+        st = os.stat(path)
+        return (st.st_ino, st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
+
 def cmd_pump(a):
-    """Internal: one maintenance pass, or (--loop) repeat until no professional has been alive for a minute."""
+    """Internal: one maintenance pass, or (--loop) repeat until no professional has been alive for a minute.  0.9.0: the loop
+    re-execs itself when its script changes on disk (seen live: a loop started before 0.8.7 timed out a task 0.8.7 extends)."""
     if not a.loop:
         pump()
         return 0
-    empty_since = None
+    empty_since, me = None, os.path.realpath(__file__)
+    born = script_id(me)
+    log("pump-loop-start", version=VERSION, pid=os.getpid())
     while True:
+        if script_id(me) not in (born, None):  # 0.9.0: upgraded on disk: run the new code, same process and pane
+            log("pump-loop-reexec", old=VERSION, pid=os.getpid())
+            with contextlib.suppress(OSError):
+                os.execv(sys.executable, [sys.executable, me, "pump", "--loop"])
         try:
             pump()
         except Exception as e:  # noqa: BLE001
