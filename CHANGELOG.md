@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.8.3
+
+Worker verdicts are hard to forget (audit-24h: the lead's log of what each worker is good at stayed empty).
+
+- `pros rate <name> good|neutral|bad "why" [--task T]`: neutral and a positional why are new; the verdict names its task (default: that professional's last DONE task for you). `--note` still works.
+- While a task you sent has a DONE reply and no verdict, `pros inbox` and `pros read` of the reply print `rate: pros rate NAME good|neutral|bad "why" --task T`. Professionals are not nudged; they use `pros evaluate`.
+- `pros evaluate` also logs its verdict there (passed=good, partial=neutral, failed=bad), so it counts as a rating; it does not change session scoring.
+- `pros team` shows each professional's last verdict (`verdict` column, `--json` field `verdict`).
+- Tests: `tests/test_v083.py`.
+
 ## 0.8.2
 
 Unblock restarts keep the run, and automatic unblock never widens past a script.

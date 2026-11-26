@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.2"
+VERSION = "0.8.3"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -818,7 +818,7 @@ def hist_sessions(name) -> list:
             x = sess[sid]
             x.update(ended=r.get("t"), reason=r.get("reason", ""), answered=x["answered"] + r.get("answered", 0),
                      failed=x["failed"] + r.get("failed", 0), timeout=x["timeout"] + r.get("timeout", 0))
-        elif sid in sess and ev == "rate":
+        elif sid in sess and ev == "rate" and r.get("source") != "evaluate":  # a task verdict from evaluate does not score the session
             sess[sid].update(rating=r.get("rating", ""), note=r.get("note", ""))
         elif sid in sess and ev == "alias":
             sess[sid]["actual"] = r.get("actual", "")
@@ -3708,14 +3708,40 @@ def cmd_auto_unblock(a):
     return 0
 
 
+def verdicts(name) -> list:
+    """0.8.3: every verdict on a professional, oldest first: pros rate rows and the ones pros evaluate mirrors there."""
+    return [r for r in hist_rows(name) if r.get("ev") == "rate"]
+
+
+def done_tasks(me) -> list:
+    """(professional, task) of each DONE reply a professional sent to me for a task I sent, oldest first, one per task."""
+    mine = {m["task"] for m in all_msgs() if m["kind"] == "task" and m["from"] == me}
+    out = {}
+    for m in sorted(all_msgs(), key=lambda x: x.get("created", 0)):
+        if m["kind"] == "reply" and m["to"] == me and m["from"] != me and m["task"] in mine and not m.get("suppressed"):
+            out.setdefault(m["task"], m["from"])
+    return [(n, tk) for tk, n in out.items()]
+
+
+def unrated(me) -> list:
+    rated = {}
+    return [(n, tk) for n, tk in done_tasks(me) if tk not in rated.setdefault(n, {r.get("task") for r in verdicts(n)})]
+
+
+def rate_nudge(name, task) -> str:
+    return 'rate: pros rate %s good|neutral|bad "why" --task %s' % (name, task)
+
+
 def cmd_rate(a):
     require_user("rate professionals")
     name = check_name(a.name)
     sess = hist_sessions(name)
     if not sess:
         die("%s has no session history yet" % name, 1)
-    hist_append(name, {"ev": "rate", "id": sess[-1]["id"], "rating": a.rating, "note": a.note or ""})
-    print("%s: last session %s rated %s" % (name, sess[-1]["id"][:8], a.rating))
+    task = a.task or next((tk for n, tk in reversed(done_tasks(self_name())) if n == name), "")
+    note = " ".join(x for x in (a.why, a.note) if x)
+    hist_append(name, {"ev": "rate", "id": sess[-1]["id"], "rating": a.rating, "note": note, "task": task})
+    print("%s: %s rated %s (session %s)" % (name, "task " + task if task else "last session", a.rating, sess[-1]["id"][:8]))
     return 0
 
 
@@ -3834,6 +3860,10 @@ def cmd_evaluate(a):
         die(str(e), 3 if getattr(e, "code", "") == "not_found" else 2)
     finally:
         conn.close()
+    sess = hist_sessions(m["to"])
+    if sess:  # 0.8.3: one verdict log per professional (pros team, the rate nudge); it does not score the session
+        hist_append(m["to"], {"ev": "rate", "id": sess[-1]["id"], "rating": {"passed": "good", "partial": "neutral"}.get(d["status"], "bad"),
+                              "note": "evaluate %s by %s" % (d["status"], who), "task": a.task, "source": "evaluate"})
     print("evaluated task %s (%s, to %s): %s by %s [%s]" % (a.task, m["id"], m["to"], d["status"], who, d["eval"]))
     return 0
 
@@ -4395,6 +4425,8 @@ def cmd_read(a):
     if not m:
         die("no message %s" % a.id)
     print_msg(m)
+    if m["kind"] == "reply" and not is_pro() and (m["from"], m["task"]) in unrated(self_name()):
+        print(rate_nudge(m["from"], m["task"]))  # 0.8.3: until a verdict for this task exists
     if m["kind"] in ("reply", "note", "status") and m["state"] != "answered":
         m["state"], m["read_at"] = "answered", now()
         save_msg(m)
@@ -4413,6 +4445,11 @@ def cmd_inbox(a):
         print("%s task=%s from=%s kind=%s  %s" % (m["id"], m["task"], m["from"], m["kind"], m["body"].replace("\n", " ")[:100]))
     if rows:
         print("read one with: pros read <id>")
+    todo = unrated(me) if not is_pro() else []
+    for n, tk in todo[-5:]:  # 0.8.3: a DONE task without a verdict, until it gets one
+        print(rate_nudge(n, tk))
+    if len(todo) > 5:
+        print("(%d more done tasks without a verdict)" % (len(todo) - 5))
     return 0
 
 
@@ -4620,7 +4657,7 @@ def cmd_team(a):
                      "guard": guard_of(rec.get("harness", "claude"), rec.get("model") or st.get("pi_model") or ""),
                      "task": st.get("task", "") if act in ("working", "waiting") else "", "summoner": rec.get("summoner", ""),
                      "age_s": int(now() - rec["started"]), "queued": queue_len(s), "denied": den,
-                     "workdir": rec["workdir"], "agents_status": agents_status().get(s, "")})
+                     "workdir": rec["workdir"], "agents_status": agents_status().get(s, ""), "verdict": last_verdict(rec.get("entry") or rec["name"])})
     rows += adhoc_rows()
     ms = all_msgs() if any(r["task"] for r in rows) else []
     for r in rows:  # 0.8.1 (card 1601): what a working or waiting row works on, in words
@@ -4636,7 +4673,10 @@ def cmd_team(a):
         r["denied"] = ",".join("%s x%d" % kv for kv in r["denied"].items())
         r["state"] = r["activity"] + ("*" if r["reason"] else "")
         r["model"] = (r["model"] or "-") + (":" + r["thinking"] if r["thinking"] else "")
-    fmt_table(rows, ["name", "harness", "model", "scope", "state", "task", "summoner", "age", "queued", "denied"])
+    for r in rows:
+        v = r.get("verdict") or {}
+        r["verdict"] = ("%s: %s" % (v["rating"], v["note"]) if v.get("note") else v.get("rating", ""))[:40]
+    fmt_table(rows, ["name", "harness", "model", "scope", "state", "task", "summoner", "age", "queued", "denied", "verdict"])
     for r in rows:
         if r["reason"]:
             print("* %s: %s" % (r["name"], r["reason"]))
@@ -4646,6 +4686,11 @@ def cmd_team(a):
     if any(r["denied"] for r in rows):
         print("denied: calls refused by permission rules; with auto_unblock on pros lifted them itself, else the summoner got the fix (user: pros unblock NAME). Protected paths stay denied.")
     return 0
+
+
+def last_verdict(name) -> dict:
+    v = (verdicts(name) or [None])[-1]
+    return {"rating": v.get("rating", ""), "note": v.get("note", ""), "task": v.get("task", ""), "t": v.get("t", 0)} if v else {}
 
 
 def cmd_join(a):
@@ -4711,7 +4756,7 @@ def adhoc_rows() -> list:
         hs = st.get("state") or "idle"
         bg = bg_commands(r["claude_pid"]) if hs != "busy" else []
         rows.append({"name": r["name"], "session": key, "scope": "adhoc", "state": "busy" if hs == "busy" else "idle", "reason": "",
-                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "", "guard": "",
+                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "", "guard": "", "verdict": {},
                      "task": st.get("task", "") if hs == "busy" or bg else "", "summoner": "-", "age_s": int(now() - float(r.get("joined", now()))),
                      "queued": queue_len(key), "denied": {}, "workdir": r.get("cwd", ""), "agents_status": "",
                      "wake": "listener" if adhoc_listening(r) else ("tmux" if r.get("tmux_pane") else "hooks")})
@@ -5249,10 +5294,12 @@ def build_parser():
     sp = add("keep", cmd_keep, help="never idle-reap this professional (user only)")
     sp.add_argument("name")
     sp.add_argument("--off", action="store_true")
-    sp = add("rate", cmd_rate, help="rate the last session good or bad (user only)")
+    sp = add("rate", cmd_rate, help="record a verdict on a professional's task: good, neutral or bad, and why (user only)")
     sp.add_argument("name")
-    sp.add_argument("rating", choices=["good", "bad"])
+    sp.add_argument("rating", choices=["good", "neutral", "bad"])
+    sp.add_argument("why", nargs="?", help="one line: what it got right or wrong")
     sp.add_argument("--note")
+    sp.add_argument("--task", help="the task this verdict is for (default: its last DONE task for you)")
     sp = add("sessions", cmd_sessions, help="session history of a professional")
     sp.add_argument("name")
     sp.add_argument("--json", action="store_true")
