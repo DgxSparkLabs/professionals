@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.8.9
+
+- A denial note never suggests an interpreter wildcard (seen live: `--allow 'Bash(python3 *)'` for a `python3 -c` one-liner
+  that only read a file). A call that only reads one file gets `use Read on FILE`; other inline code or a bare runner
+  gets no rule (put it in a script, allow just that script); `pros unblock NAME` without `--allow` refuses to guess one.
+
 ## 0.8.8
 
 - The 0.8.7 deadline rule also covers a professional still in its turn when it shows activity in the last 2 minutes (a

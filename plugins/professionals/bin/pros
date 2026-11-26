@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.8"
+VERSION = "0.8.9"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -1356,6 +1356,39 @@ def suggest_rule(tool, target) -> str:
     return tool
 
 
+READERS = {"cat", "head", "tail", "less", "more"}
+WRITE_HINTS = re.compile(r"""\b(write|remove|unlink|rmdir|rmtree|rename|replace|system|popen|subprocess|exec|eval|chmod|chown|mkdir|socket|urlopen|requests)\b|open\([^)]*,\s*['"][^'"]*[wax+]""")
+PATH_LIT = re.compile(r"""(?:open|Path|read_text|load)\(\s*['"]([^'"]+)['"]""")
+
+
+def read_only_path(tool, target) -> str:
+    """0.8.9: the file a Bash call only reads (cat FILE, or python3 -c that only opens FILE for reading), or ''."""
+    t = (target or "").strip()
+    if tool != "Bash" or not t:
+        return ""
+    words = t.split()
+    if words[0] in READERS and len(words) == 2 and re.match(r"^[\w~./-]+$", words[1]):
+        return words[1]
+    if is_runner(words[0]) and len(words) > 2 and words[1] == "-c":
+        code = t.split(None, 2)[2]
+        paths = set(PATH_LIT.findall(code))
+        if len(paths) == 1 and not WRITE_HINTS.search(code) and not re.search(r"[|;&<>`]|\$\(", t.replace(code, "")):
+            return paths.pop()
+    return ""
+
+
+def narrow_fix(name, d) -> str:
+    """0.8.9: the fix a denial note (and pros unblock) gives; never an interpreter wildcard or the whole Bash tool."""
+    path = read_only_path(d["tool"], d["target"])
+    if path:
+        return "this call only reads a file: use Read on %s (no Bash rule needed)" % path
+    rule = suggest_rule(d["tool"], d["target"])
+    if too_wide(rule):
+        return ("no narrow rule fits inline code or a bare interpreter (a wildcard rule would allow any command); use Read or Grep to "
+                "read, or put the code in a script: the user can then allow just that script, e.g. Bash(python3 tools/x.py *)")
+    return ""
+
+
 def too_wide(rule) -> bool:
     """A rule pros never adds by itself (auto-unblock): the whole Bash tool, or an interpreter/wrapper with no script."""
     m = re.match(r"^Bash(?:\((\S+) \*\))?$", rule)
@@ -1371,6 +1404,10 @@ def denial_report(name, rec, d, e=None) -> str:
                 "This cannot be lifted, not even by pros unblock; give it the data another way." % (name, d["tool"], target, hit))
     rule = suggest_rule(d["tool"], d["target"])
     why = " Its allow rules are the ceiling the user registered (pros add --allow); pros does not widen them." if (e or {}).get("allow_ceiling") else ""
+    fix = narrow_fix(name, d)
+    if fix:
+        return "%s was denied %s: %s. Blocked by: no allow rule matches it in %s mode.%s Fix: %s" % (
+            name, d["tool"], target, rec.get("mode") or "this", why, fix)
     return ("%s was denied %s: %s. Blocked by: no allow rule matches it in %s mode.%s Fix (user): %s unblock %s --allow '%s'" % (
         name, d["tool"], target, rec.get("mode") or "this", why, pro_cmd(), name, rule))
 
@@ -3711,6 +3748,9 @@ def cmd_unblock(a):
         if hit:
             die("refusing: the last denied call of %s (%s %s) touches the protected path %s; pros unblock never lifts that deny rule" % (
                 name, d.get("tool"), str(d.get("target"))[:200], hit), 4, "protected")
+        fix = narrow_fix(name, {"tool": d.get("tool", ""), "target": d.get("target", "")})
+        if fix:
+            die("refusing to guess a rule for the last denied call of %s (%s): %s" % (name, str(d.get("target"))[:200], fix), 2)
         rule = suggest_rule(d.get("tool", ""), d.get("target", ""))
     check_allow_rule(rule, e0)
 

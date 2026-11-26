@@ -169,7 +169,8 @@ class NarrowAutoRules(Base):
         self.assertEqual(len(self.argv_all(self.session("alpha"))), 1)  # and no restart
         b = " ".join(m["body"] for m in self.notes())
         for rule in ("--allow 'Bash(python3 *)'", "--allow 'Bash'", "--allow 'Bash(bash *)'"):
-            self.assertIn(rule, b)  # the usual note, with the manual fix
+            self.assertNotIn(rule, b)  # 0.8.9: never an interpreter wildcard or bare Bash in the note
+        self.assertIn("no narrow rule fits inline code", b)  # the usual note, with the narrow fix
 
 
 class AllowCeiling(Base):
