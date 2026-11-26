@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.7.0"
+VERSION = "0.7.1"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -2959,28 +2959,30 @@ def cmd_add(a):
         market = set()
 
     def edit(reg):
-        for n, e in reg["entries"].items():
-            if e.get("kind") == "folder" and e.get("path") == str(path):
-                if not (a.refresh or a.trust_code or a.allow or a.deny or a.mode is not None or a.model is not None
-                        or a.harness is not None or a.thinking is not None or a.auto_unblock is not None):
-                    return "same", n
-                if a.allow:  # 0.6.0: --allow/--deny/--mode update the entry (they were ignored for a registered folder)
-                    e["allow"] = list(dict.fromkeys(list(e.get("allow", [])) + list(a.allow)))
-                if a.deny:
-                    e["deny_paths"] = list(dict.fromkeys(list(e.get("deny_paths", DEFAULT_FOLDER_DENY)) + list(a.deny)))
-                if a.mode is not None:
-                    e["mode"] = a.mode
-                set_harness_fields(e, a)
-                if a.auto_unblock is not None:
-                    e["auto_unblock"] = a.auto_unblock == "on"
-                if not (a.refresh or a.trust_code):
-                    return "updated", n  # the files' hash is re-read only with --refresh: a changed folder still needs review
-                e.update(content_hash=info["hash"], identity=folder_identity(path), description=e.get("description") or folder_description(path))
-                if a.trust_code:
-                    e["trust_code"] = True
-                if a.refresh:
-                    e["trust_code"] = bool(a.trust_code)
-                return "refreshed", n
+        same = [(n, e) for n, e in reg["entries"].items() if e.get("kind") == "folder" and e.get("path") == str(path)]
+        if a.name:  # 0.7.1 (T200): a new --name is a second professional for the same folder, with its own sessions
+            same = [(n, e) for n, e in same if n == a.name]
+        for n, e in same[:1]:
+            if not (a.refresh or a.trust_code or a.allow or a.deny or a.mode is not None or a.model is not None
+                    or a.harness is not None or a.thinking is not None or a.auto_unblock is not None):
+                return "same", n
+            if a.allow:  # 0.6.0: --allow/--deny/--mode update the entry (they were ignored for a registered folder)
+                e["allow"] = list(dict.fromkeys(list(e.get("allow", [])) + list(a.allow)))
+            if a.deny:
+                e["deny_paths"] = list(dict.fromkeys(list(e.get("deny_paths", DEFAULT_FOLDER_DENY)) + list(a.deny)))
+            if a.mode is not None:
+                e["mode"] = a.mode
+            set_harness_fields(e, a)
+            if a.auto_unblock is not None:
+                e["auto_unblock"] = a.auto_unblock == "on"
+            if not (a.refresh or a.trust_code):
+                return "updated", n  # the files' hash is re-read only with --refresh: a changed folder still needs review
+            e.update(content_hash=info["hash"], identity=folder_identity(path), description=e.get("description") or folder_description(path))
+            if a.trust_code:
+                e["trust_code"] = True
+            if a.refresh:
+                e["trust_code"] = bool(a.trust_code)
+            return "refreshed", n
         name = check_name(a.name or default_name(path.name))
         if name in reg["entries"] or name in market:
             die("the name %r is taken (another professional or a marketplace one); choose another with --name" % name, 2, "name_clash")

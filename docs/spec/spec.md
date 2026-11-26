@@ -45,7 +45,7 @@ There are two kinds of professional:
 
 ### 3.2 Folders, registry, resume (v2)
 
-- R9. `pros add <dir>` registers a folder that has `CLAUDE.md`, `AGENTS.md` or `.claude/`. Otherwise it is refused ("not an agent folder") unless `--force`. Name default: the folder name, lowercased, other characters to `-`, at most 40. Name clashes with another entry or a marketplace professional are refused; one folder is one entry.
+- R9. `pros add <dir>` registers a folder that has `CLAUDE.md`, `AGENTS.md` or `.claude/`. Otherwise it is refused ("not an agent folder") unless `--force`. Name default: the folder name, lowercased, other characters to `-`, at most 40. Name clashes with another entry or a marketplace professional are refused. `pros add <dir>` again with no `--name`, or with the name it already has, changes that entry only (flags) or nothing; a new `--name` registers a second name for the same folder (0.7.1): a separate entry with its own `pro_id`, history, live session (`pro-<name>`) and session ids, so the two names never share a session.
 - R10. Summoning a folder professional starts Claude with the folder as working directory and appends only the bus protocol to the system prompt. If the folder has an `AGENTS.md` but no `CLAUDE.md`, the `AGENTS.md` text is appended too (Claude Code does not read `AGENTS.md` itself). No persona file is used. A missing folder exits 5 (`folder missing`).
 - R11. Every new session gets a generated session id (`--session-id`). Each session writes rows to `~/.professionals/history/<name>.jsonl`: a start row, and an end row with the end reason (`stopped`, `reaped`, `died`, `stuck`, `failed-to-start`, `disabled`, `lost`) and task counts. History is append-only (one write per row), survives stop, reap, reboot and `remove` (unless `--forget`), and is rotated at 1000 rows.
 - R12. When no process is alive, `summon` resumes the last session (`claude --resume <id>`, same working directory) if its score is good or neutral and its transcript exists, and prints `resumed=<id>`. Otherwise it starts fresh and prints `fresh: <reason>`. `--fresh` forces a new session, `--fork` copies the context into a new id (`--resume <id> --fork-session --session-id <new>`), `--session <id>` resumes a specific session even if it was bad. A session older than `resume_max_days` (default 14) starts fresh. If a resume fails to start, one fresh start is tried.
@@ -168,6 +168,7 @@ All tests run with a stand-in `claude` program on a private tmux socket and a te
 | Resume, fresh, fork, scoring, history, reap and keep, reboot, parallel summons | `tests/test_resume.py` |
 | Bypass default, deny rules kept, no first-run dialog, per-professional mode, denial notes, `pros unblock`, `add --refresh --allow` | `tests/test_v060.py` |
 | Automatic unblock: rule, restart with history, one-line note, audit event, protected paths kept, per-pro and config switch, no restart loop | `tests/test_v061.py` |
+| Second name for the same folder: separate entries, sessions and session ids | `tests/test_v071.py` |
 | Harness registry, per-professional harness/model/thinking, Pi RPC bridge (stand-in `tests/fake_pi.py`), cross-harness messaging, guard, dialogs refused, evaluations | `tests/test_v070.py` |
 
 ## 9. Out of scope

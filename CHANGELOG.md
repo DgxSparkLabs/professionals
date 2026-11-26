@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.7.1
+
+A second name for the same folder (spec 026, 064 T200).
+
+- `pros add <folder already registered> --name b` now registers `b` as a second entry for that folder, with its own `pro_id`, history, live session `pro-b` and session ids; the two names never share a session. Before, it said "already registered" and ignored `--name`.
+- `pros add <dir>` with no `--name`, or with the name the folder already has, behaves as before: nothing changes, or the given flags update that one entry.
+- Test: `tests/test_v071.py`. Updated: `tests/test_registry.py` `test_same_path_twice_changes_nothing` asserted the old ignore-`--name` behaviour; it now checks the repeat add with no name and with the same name.
+
 ## 0.7.0
 
 pros is harness-agnostic (task harness-1126): a professional can run on Claude Code or on the Pi agent with any model Pi has.

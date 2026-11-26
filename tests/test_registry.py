@@ -58,9 +58,11 @@ class Registry(ProTestCase):
     def test_same_path_twice_changes_nothing(self):
         d = self.make_folder("once")
         self.ok("add", d)
-        r = self.ok("add", d, "--name", "twice")
+        r = self.ok("add", d)
         self.assertIn("already registered as once", r.stdout)
-        self.assertNotIn("twice", self.listing())
+        r = self.ok("add", d, "--name", "once")
+        self.assertIn("already registered as once", r.stdout)
+        self.assertNotIn("twice", self.listing())  # a new --name is a second entry since 0.7.1: tests/test_v071.py
 
     def test_home_and_symlink_refused(self):
         os.makedirs(os.path.join(self.fakehome, ".claude"))
