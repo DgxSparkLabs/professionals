@@ -8,7 +8,7 @@ import signal
 import subprocess
 import unittest
 
-from helpers import PRO, ProTestCase
+from helpers import PRO, ProTestCase, load_pros
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -109,6 +109,42 @@ class AnsweredTasksStayClosed(ExitHelpers, ProTestCase):
         self.summon("alpha")
         self.assertEqual(self.states("t-old"), [("answered", False)])
         self.assertTrue(self.states("t-now")[0][1], "the task in flight is resent, marked possible duplicate")
+
+
+class AdoptLivePane(ProTestCase):
+    """0.8.5.1: a pane that lives while pros dropped its record ('died', from a wrong 'gone' before 0.8.5): send said
+    "not running; starting it", then "duplicate session". It must deliver to the live pane, never start a second one."""
+
+    def setup_alpha(self):
+        self.config({"default_mode": "dontAsk"})
+        self.summon("alpha", "--model", "claude-sonnet-5-5", "--thinking", "high")
+        s = [x for x in self.sessions_alive() if x.startswith("pro-alpha")][0]
+        return s, os.path.join(self.home, "run", "sessions", s + ".json")
+
+    def check_adopted(self, s, before):
+        r = self.ok("ask", "alpha", "ECHO still here", "--wait", "20")
+        self.assertIn("still here", r.stdout)
+        self.assertEqual(len(self.argv_all(s)), 1, "no second start")
+        rec = json.load(open(os.path.join(self.home, "run", "sessions", s + ".json")))
+        self.assertEqual((rec["session_id"], rec["model"], rec["thinking"]), (before["session_id"], "claude-sonnet-5-5", "high"))
+        row = [x for x in json.loads(self.ok("list", "--json").stdout) if x["name"] == "alpha"][0]
+        self.assertTrue(row["last"].endswith("(open)"), row["last"])
+
+    def test_record_gone_without_a_copy_is_rebuilt_from_the_live_program(self):
+        s, path = self.setup_alpha()
+        before = json.load(open(path))
+        os.unlink(path)  # as 0.8.4 / 0.8.5 left it: no copy
+        self.check_adopted(s, before)
+
+    def test_dropped_record_is_taken_back(self):
+        s, path = self.setup_alpha()
+        before = json.load(open(path))
+        p = load_pros(self.home)
+        p.drop_session(before, "died")  # what the wrong 'gone' did
+        self.assertFalse(os.path.exists(path))
+        r = self.ok("summon", "alpha")
+        self.assertIn("adopted=yes", r.stdout)
+        self.check_adopted(s, before)
 
 
 class Documented(unittest.TestCase):

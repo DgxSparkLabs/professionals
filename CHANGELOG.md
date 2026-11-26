@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.8.5.1
+
+- A professional whose record pros dropped while its pane still lived (the wrong "gone" fixed in 0.8.5) could not be
+  reached: `pros send` said "not running; starting it", then "duplicate session". Summon (and so send and its wake) now
+  adopts a live pane with no record: it takes back the dropped record (pros keeps a copy under `run/dropped/`) or
+  rebuilds it from the program's own argv and its history row, writes an `adopt` history row (the run shows open again),
+  and delivers there. A second session is never started; a live pane pros cannot rebuild fails with how to attach or close it.
+
 ## 0.8.5
 
 - A summon right after a professional's program exited started nothing: the exited pane stays open for 20 s

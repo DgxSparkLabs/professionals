@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.5"
+VERSION = "0.8.5.1"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -821,6 +821,8 @@ def hist_sessions(name) -> list:
                      failed=x["failed"] + r.get("failed", 0), timeout=x["timeout"] + r.get("timeout", 0))
         elif sid in sess and ev == "rate" and r.get("source") != "evaluate":  # a task verdict from evaluate does not score the session
             sess[sid].update(rating=r.get("rating", ""), note=r.get("note", ""))
+        elif sid in sess and ev == "adopt":  # 0.8.5.1: a live pane taken back after a wrong "gone"
+            sess[sid].update(ended=None, reason="")
         elif sid in sess and ev == "alias":
             sess[sid]["actual"] = r.get("actual", "")
     out = [sess[i] for i in order]
@@ -1579,6 +1581,8 @@ def drop_session(rec, reason="gone"):
     with contextlib.suppress(Exception):
         hist_end(rec, reason)
     st_set(s, state="gone", reason=reason)
+    with contextlib.suppress(OSError):
+        write_json(ensure_private(run_dir("dropped")) / (s + ".json"), rec)  # 0.8.5.1: kept so a pane that still lives is adopted back
     with contextlib.suppress(OSError):
         os.unlink(run_dir("sessions", s + ".json"))
     wd = run_dir("waits")
@@ -4281,6 +4285,41 @@ def effective_mode(explicit_mode, c=None):
     return mode
 
 
+def pane_argv(s) -> list:
+    """argv of the program under the pane's shell (Linux /proc; [] elsewhere or when none)."""
+    top = (tmux("list-panes", "-t", "=%s:" % s, "-F", "#{pane_pid}").stdout.split() or [""])[0]
+    for p in (os.listdir("/proc") if top and os.path.isdir("/proc") else []):
+        with contextlib.suppress(OSError, IndexError):
+            if p.isdigit() and Path("/proc", p, "stat").read_text().rsplit(")", 1)[1].split()[1] == top:
+                return [x for x in Path("/proc", p, "cmdline").read_bytes().decode(errors="replace").split("\0") if x]
+    return []
+
+
+def adopt_rec(name, s, e, scope, project, workdir):
+    """0.8.5.1: a pane that lives while its record was dropped (a wrong 'gone') is taken back, never started a second time.
+    The dropped record when there is one; else one rebuilt from the program's own argv and its history row (Claude only)."""
+    rec = read_json(run_dir("dropped", s + ".json"))
+    if not (isinstance(rec, dict) and rec.get("session") == s and rec.get("name") == name):
+        argv = pane_argv(s)
+        flag = lambda f: argv[argv.index(f) + 1] if f in argv[:-1] else ""
+        sid = flag("--session-id") or flag("--resume")
+        if flag("-n") != s or not sid:
+            return None
+        row = ([r for r in hist_rows(name) if r.get("ev") == "start" and r.get("id") == sid] or [{}])[-1]
+        env = dict(x.split("=", 1) for x in tmux("show-environment", "-t", "=" + s).stdout.splitlines() if "=" in x)
+        rec = {"session": s, "name": name, "entry": name, "kind": e["kind"], "scope": scope, "project": str(project), "workdir": str(workdir),
+               "summoner": env.get("PRO_SUMMONER", "user"), "depth": 0, "started": row.get("t", now()), "mode": flag("--permission-mode"),
+               "explicit_mode": False, "allow_persona_tools": False, "sandbox": False, "dropped_tools": [], "owned": False,
+               "session_id": sid, "run_id": row.get("run") or "r-" + uuid.uuid4().hex[:12], "harness": "claude", "proto": "claude",
+               "model": flag("--model"), "thinking": flag("--effort")}
+    write_json(run_dir("sessions", s + ".json"), rec)
+    st_set(s, state="idle", reason="", last_activity=now())
+    hist_append(name, {"ev": "adopt", "id": rec["session_id"]})
+    with contextlib.suppress(OSError):
+        os.unlink(run_dir("dropped", s + ".json"))
+    return rec
+
+
 def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False, session=None, harness=None, thinking=None):
     check_name(name)
     c = cfg()
@@ -4338,6 +4377,12 @@ def summon(name, scope, mode, model, allow_tools=False, fresh=False, fork=False,
             if harness and rec.get("harness", "claude") != hname:
                 note += " harness=%s (stop it to start on %s)" % (rec.get("harness", "claude"), hname)
             print("ready: %s session=%s scope=%s dir=%s reused=yes state=%s%s" % (name, s, scope, rec["workdir"], state, note))
+            return 0
+        if not rec and has_session(s) and classify_pane(capture(s, ansi=True)) != "gone":
+            rec = adopt_rec(name, s, e, scope, project, workdir)
+            if not rec:
+                die("%s: tmux session %s is alive but pros has no record of it; attach (pros attach %s) or close it (tmux -L %s kill-session -t %s), then summon" % (name, s, name, sock(), s), 5)
+            print("ready: %s session=%s scope=%s dir=%s reused=yes adopted=yes" % (name, s, scope, rec["workdir"]))
             return 0
         if rec:
             drop_session(rec, "died")
