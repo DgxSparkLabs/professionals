@@ -47,7 +47,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -63,6 +63,7 @@ DEFAULTS = {
     "max_ask_wait_s": 100, "auto_reply": True, "delivering_recover_s": 30, "pump_interval_s": 5, "trusted_marketplaces": [], "deny_paths": [], "sandbox": "auto",
     "publish_guard": "", "resume_max_days": 14, "max_resends": 1, "max_attempts": 2,
     "wake_on_send": True, "failover": True, "msg_retention_days": 30,
+    "auto_unblock": True,  # a denial that no deny rule caused is unblocked by pros itself (entry auto_unblock: false turns it off)
     "blocked_models": ["fable"],  # a model whose name contains one of these runs only when the user stored it on that professional's entry
 }
 DEFAULT_DENY = ["~/.ssh", "~/.aws", "~/.gnupg", "~/.config/gh", "~/.netrc", "~/.claude/.credentials.json"]
@@ -1260,12 +1261,48 @@ def check_denials(rec):
         new.append(d)
     st_set(s, denials_mtime=mt, denials_seen=sorted(x for x in seen if x)[-500:], denials_keys=sorted(keys)[-200:],
            last_denial=new[-1] if new else st.get("last_denial"))
+    auto = None
     for d in new:
-        text = denial_report(rec["name"], rec, d, e)
         who = rec.get("summoner") or "user"
+        rule = auto_rule(rec, d, e)
+        if rule and not auto:
+            auto = (rule, d)
+            continue
+        if rule and auto and rule == auto[0]:
+            continue  # the same rule fixes this one too
+        text = denial_report(rec["name"], rec, d, e)
         notify(who, "-", text)
         if who != "user":
             notify("user", "-", text)  # only the user may run pros unblock
+    if auto:
+        st_set(s, auto_unblock_pending={"rule": auto[0], "tool": auto[1]["tool"], "target": auto[1]["target"][:300], "at": now()})
+        start_auto_unblock(s)
+
+
+def auto_unblock_on(e) -> bool:
+    """config auto_unblock (default on), unless the user turned it off for this professional (entry auto_unblock: false)."""
+    if e and e.get("auto_unblock") is not None:
+        return bool(e["auto_unblock"])
+    return bool(cfg().get("auto_unblock", True))
+
+
+def auto_rule(rec, d, e) -> str:
+    """The rule pros applies by itself for denial d, or '' (switched off, a protected path, or the rule is already allowed:
+    then something else denies it, and the usual note goes out instead of a restart loop)."""
+    if not e or not auto_unblock_on(e) or protected_hit(d["target"], e) or protected_hit(d.get("text", ""), e):
+        return ""
+    rule = suggest_rule(d["tool"], d["target"])
+    if not RULE_RE.match(rule) or protected_hit(rule, e) or rule in (e.get("allow") or []):
+        return ""
+    return rule
+
+
+def start_auto_unblock(s):
+    """Restart in a process of its own: the pump may be running inside the very session that is restarted."""
+    with contextlib.suppress(OSError):
+        env = {k: v for k, v in os.environ.items() if k not in ("PRO_SELF", "PRO_SESSION", "TMUX", "TMUX_PANE")}
+        subprocess.Popen([sys.executable, os.path.realpath(__file__), "auto-unblock", s], env=env, cwd=str(pro_home()),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def live_state(rec, pane=None) -> tuple:
@@ -2523,6 +2560,7 @@ def cmd_show(a):
         print("name: %s\nkind: folder\nstate: %s\npath: %s\nenabled: %s\nkeep: %s\nmode: %s\ndescription: %s" % (
             name, entry_state(e), e["path"], e.get("enabled", True), bool(e.get("keep")), e.get("mode") or "(default)", sanitize_desc(e.get("description"))))
         print("extra allow rules: %s\ndeny paths: %s\ntrust_code: %s" % (", ".join(e.get("allow", [])) or "-", ", ".join(e.get("deny_paths", [])) or "-", bool(e.get("trust_code"))))
+        print("auto_unblock: %s" % ("on" if auto_unblock_on(e) else "off"))
         if info.get("hooks") or info.get("mcp"):
             print("runs code on start: hooks=%s mcp=%s" % (",".join(info["hooks"]) or "-", ",".join(info["mcp"]) or "-"))
         print("\nA folder professional runs inside its own folder and may edit files there. Its session context is shared by everyone who summons it; use `pros summon %s --fresh` for a clean one." % name)
@@ -2534,6 +2572,7 @@ def cmd_show(a):
     print("state: %s" % (entry_state(e) if e else "available (not enabled)"))
     _, dropped = tools_to_allow(p["tools"], False, False)
     print("mode: %s" % ((e or {}).get("mode") or "%s (default)" % cfg()["default_mode"]))
+    print("auto_unblock: %s" % ("on" if auto_unblock_on(e) else "off"))
     if dropped and ((e or {}).get("mode") or cfg()["default_mode"]) != BYPASS:
         print("ignored tools (not in the safe allowlist; pros summon %s --allow-persona-tools grants them): " % p["name"] + ", ".join(dropped))
     print("\n" + p["body"].strip()[:1500])
@@ -2565,7 +2604,7 @@ def cmd_add(a):
     def edit(reg):
         for n, e in reg["entries"].items():
             if e.get("kind") == "folder" and e.get("path") == str(path):
-                if not (a.refresh or a.trust_code or a.allow or a.deny or a.mode is not None or a.model is not None):
+                if not (a.refresh or a.trust_code or a.allow or a.deny or a.mode is not None or a.model is not None or a.auto_unblock is not None):
                     return "same", n
                 if a.allow:  # 0.6.0: --allow/--deny/--mode update the entry (they were ignored for a registered folder)
                     e["allow"] = list(dict.fromkeys(list(e.get("allow", [])) + list(a.allow)))
@@ -2575,6 +2614,8 @@ def cmd_add(a):
                     e["mode"] = a.mode
                 if a.model is not None:
                     e["model"] = a.model
+                if a.auto_unblock is not None:
+                    e["auto_unblock"] = a.auto_unblock == "on"
                 if not (a.refresh or a.trust_code):
                     return "updated", n  # the files' hash is re-read only with --refresh: a changed folder still needs review
                 e.update(content_hash=info["hash"], identity=folder_identity(path), description=e.get("description") or folder_description(path))
@@ -2592,6 +2633,8 @@ def cmd_add(a):
             "pro_id": "p-" + hashlib.sha1(("folder:" + name).encode()).hexdigest()[:12],
             "description": sanitize_desc(a.desc) if a.desc else folder_description(path), "mode": a.mode or "",
             "allow": list(a.allow or []), "deny_paths": DEFAULT_FOLDER_DENY + list(a.deny or []), "model": a.model or ""}
+        if a.auto_unblock is not None:
+            reg["entries"][name]["auto_unblock"] = a.auto_unblock == "on"
         return "added", name
     what, name = reg_edit(edit)
     if what != "same":
@@ -2661,6 +2704,8 @@ def cmd_enable(a):
                 reg["entries"][name]["mode"] = a.mode
             if a.model is not None:
                 reg["entries"][name]["model"] = a.model
+            if a.auto_unblock is not None:
+                reg["entries"][name]["auto_unblock"] = a.auto_unblock == "on"
             audit_emit("registry_change", {"change": "added", "origin": "marketplace", "revision": audit_revision(reg["entries"][name])},
                        pro=audit_pro(name, reg["entries"][name]), pro_name=name)
             return "enabled (new from the marketplace)"
@@ -2674,6 +2719,8 @@ def cmd_enable(a):
             e["persona_hash"] = sha(market[name]["skill"])
         if a.model is not None:
             e["model"] = a.model
+        if a.auto_unblock is not None:
+            e["auto_unblock"] = a.auto_unblock == "on"
         if a.mode is not None:
             e["mode"] = a.mode
             return "enabled, mode %s" % (a.mode or "(default %s)" % cfg()["default_mode"])
@@ -2758,9 +2805,25 @@ def cmd_unblock(a):
         return True
     added = reg_edit(edit)
     print("%s: allow rule %s %s" % (name, rule, "added" if added else "was already in its list"))
+    if added:
+        audit_unblocked(name, "user")
     if not rec:
         print("%s is not running; the rule applies from its next start" % name)
         return 0
+    restart_unblocked(name, rec)
+    notify(name, "-", "The user unblocked %s for you (pros unblock), and your session was restarted with its history. Retry the call that was denied." % rule)
+    return 0
+
+
+def audit_unblocked(name, actor):
+    with contextlib.suppress(Exception):
+        e = reg_get(tolerant=True)[0]["entries"][name]
+        audit_emit("registry_change", {"change": "unblocked", "origin": "folder" if e.get("kind") == "folder" else "marketplace",
+                                       "revision": audit_revision(e)}, actor=actor, pro=audit_pro(name, e), pro_name=name)
+
+
+def restart_unblocked(name, rec):
+    """Kill the live session and summon it again with its history: the settings file is rewritten, the open task resent once."""
     with lock(rec["session"], 30):
         tmux("kill-session", "-t", "=" + rec["session"])  # no task is failed: the restart resends the open one
         drop_session(rec, "unblocked")
@@ -2768,7 +2831,45 @@ def cmd_unblock(a):
         os.chdir(rec["project"])
     scope = None if rec.get("scope") == "folder" else rec.get("scope")
     summon(name, scope, rec.get("mode") if rec.get("explicit_mode") else None, None, rec.get("allow_persona_tools", False))
-    notify(name, "-", "The user unblocked %s for you (pros unblock), and your session was restarted with its history. Retry the call that was denied." % rule)
+
+
+def cmd_auto_unblock(a):
+    """Started by the pump (start_auto_unblock) for one denial that no deny rule caused: apply the rule, restart, tell the summoner."""
+    s = a.session
+    try:
+        with lock(s + ".auto", 0):
+            st = st_get(s)
+            p = st.get("auto_unblock_pending")
+            rec = get_rec(s)
+            if not p or not rec:
+                return 0
+            st_set(s, auto_unblock_pending=None)
+            name = rec["name"]
+            e0 = gate(name, "unblocked")
+            d = {"tool": p.get("tool", ""), "target": p.get("target", ""), "text": ""}
+            rule = auto_rule(rec, d, e0)
+            if rule != p.get("rule"):
+                return 0  # switched off, protected, or already allowed since: the pump reports it the usual way next time
+            check_allow_rule(rule, e0)
+
+            def edit(reg):
+                e = reg["entries"][name]
+                if rule in e.setdefault("allow", []):
+                    return False
+                e["allow"].append(rule)
+                return True
+            if not reg_edit(edit):
+                return 0
+            audit_unblocked(name, "pump")
+            log("auto-unblock", session=s, rule=rule)
+            who = rec.get("summoner") or "user"
+            notify(who, "-", "%s was denied %s %s; pros auto-unblocked it with %s and restarted it with its history (off: pros enable %s --auto-unblock off)." % (
+                name, d["tool"], d["target"].replace("\n", " ")[:120], rule, name))
+            restart_unblocked(name, rec)
+            notify(name, "-", "pros auto-unblocked %s for you after a denied call, and your session was restarted with its history. Retry the call that was denied." % rule)
+    except Fail as ex:
+        log("auto-unblock-failed", session=s, err=str(ex))
+        return 1
     return 0
 
 
@@ -3477,7 +3578,7 @@ def cmd_team(a):
         if r["reason"]:
             print("* %s: %s" % (r["name"], r["reason"]))
     if any(r["denied"] for r in rows):
-        print("denied: calls refused by permission rules; the summoner got each one with its fix (user: pros unblock NAME). Protected paths stay denied.")
+        print("denied: calls refused by permission rules; with auto_unblock on pros lifted them itself, else the summoner got the fix (user: pros unblock NAME). Protected paths stay denied.")
     return 0
 
 
@@ -3961,6 +4062,7 @@ def build_parser():
     sp.add_argument("--allow", action="append", help="extra permission rule, e.g. 'Bash(go test*)' (runs the repo's code)")
     sp.add_argument("--deny", action="append", help="extra path to deny (relative to the folder)")
     sp.add_argument("--mode", help="permission mode (default bypassPermissions); a stricter one such as dontAsk or acceptEdits uses the allowlist")
+    sp.add_argument("--auto-unblock", choices=["on", "off"], help="on: pros lifts a denial no deny rule caused by itself and restarts the professional (config auto_unblock, default on); off: a note only")
     sp.add_argument("--model", help="model stored on the entry; the only way to allow a model in blocked_models for this professional")
     sp = add("remove", cmd_remove, help="remove a professional from the list (user only)")
     sp.add_argument("name")
@@ -3969,6 +4071,7 @@ def build_parser():
     sp = add("enable", cmd_enable, help="allow a professional (user only)")
     sp.add_argument("name")
     sp.add_argument("--mode", help="permission mode for this professional (default bypassPermissions; '' resets to config default_mode)")
+    sp.add_argument("--auto-unblock", choices=["on", "off"], help="on: pros lifts a denial no deny rule caused by itself and restarts the professional (config auto_unblock, default on); off: a note only")
     sp.add_argument("--model", help="model stored on the entry ('' clears it); the only way to allow a model in blocked_models for it")
     sp = add("unblock", cmd_unblock, help="user only: add an allow rule to a professional and restart it with its history")
     sp.add_argument("name")
@@ -4022,6 +4125,8 @@ def build_parser():
     add("reap", cmd_reap)
     sp = add("prune", cmd_prune, help="delete finished tasks' messages older than msg_retention_days (user only)")
     sp.add_argument("--days", type=float, help="override msg_retention_days for this run (0 keeps everything)")
+    sp = add("auto-unblock", cmd_auto_unblock, help=argparse.SUPPRESS)
+    sp.add_argument("session")
     sp = add("pump", cmd_pump, help=argparse.SUPPRESS)
     sp.add_argument("--loop", action="store_true")
     sp = add("attach", cmd_attach)

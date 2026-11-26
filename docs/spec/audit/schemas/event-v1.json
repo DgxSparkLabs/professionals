@@ -811,7 +811,8 @@
          "renamed",
          "revision_changed",
          "trusted",
-         "untrusted"
+         "untrusted",
+         "unblocked"
         ]
        },
        "origin": {
