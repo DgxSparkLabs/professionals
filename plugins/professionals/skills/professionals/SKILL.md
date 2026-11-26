@@ -28,7 +28,8 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros sessions <name> [--json]` | Session history: ids, dates, task counts, score and transcript size |
 | `pros team` | Live professionals (and joined sessions) with HARNESS, model, state, current task, summoner and DENIED (tool calls refused by permission rules). State: `working` (in a turn), `waiting` (turn over, but a command it started still runs: not free), `ready` (free for input) |
 | `pros join <name>` / `pros leave` | A plain session (not a professional) joins the bus under a name: it sends as that name, and replies and tasks to it arrive by themselves, also while it is idle |
-| `pros rate <name> good\|neutral\|bad "why" [--task T]` | User only: the verdict on a professional's DONE task; `pros inbox` nudges until each one has one, `pros team` shows the last |
+| `pros rate <name> good\|neutral\|bad "why" [--task T] [--kind K]` | User only: the verdict on a professional's DONE task; `pros inbox` nudges until each one has one, `pros team` shows the last and a good at / weak at line |
+| `pros pick --for "<kind of job>" [--json]` | The best free professional for that kind of job, from its verdicts, with the reason; use it before you choose whom to summon |
 | `pros evaluations [name] [--last N] [--json]` | Past verdicts per professional, with its harness, model and thinking. Read it before choosing whom to ask |
 | `pros evaluate <task> passed\|partial\|failed [--criterion id=outcome]` | Record your verdict on an answer to a task you sent (only its caller or the user). Do it for every task |
 | `pros harness list [--json]` | The harnesses pros can start (claude, pi, ...) and whether their program is found; `add`/`remove` are user only |

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.8.6
+
+- Verdicts are used (card 1563, learn and grow). `pros pick --for "<kind of job>"` returns the best free professional for
+  that kind from its verdicts, with a one-line reason: recent good before neutral before bad (each verdict halved per
+  7 days), ties to the description that fits the job best, then to the fewest busy minutes in 24 h; `--json` gives the ranking. Two bad verdicts on a kind since the last
+  good one there keep a professional from being picked for that kind until a good one. `pros rate --kind K` names the kind;
+  older verdicts match by their reason, task id and task title.
+- `pros team` prints a `good at / weak at` line per professional from its verdict reasons (`--json`: `good_at`, `weak_at`).
+
 ## 0.8.5.1
 
 - A professional whose record pros dropped while its pane still lived (the wrong "gone" fixed in 0.8.5) could not be

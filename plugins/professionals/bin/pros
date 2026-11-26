@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.8.5.1"
+VERSION = "0.8.6"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -3786,7 +3786,7 @@ def cmd_rate(a):
         die("%s has no session history yet" % name, 1)
     task = a.task or next((tk for n, tk in reversed(done_tasks(self_name())) if n == name), "")
     note = " ".join(x for x in (a.why, a.note) if x)
-    hist_append(name, {"ev": "rate", "id": sess[-1]["id"], "rating": a.rating, "note": note, "task": task})
+    hist_append(name, dict({"ev": "rate", "id": sess[-1]["id"], "rating": a.rating, "note": note, "task": task}, **({"kind": a.kind} if a.kind else {})))
     print("%s: %s rated %s (session %s)" % (name, "task " + task if task else "last session", a.rating, sess[-1]["id"][:8]))
     return 0
 
@@ -4765,6 +4765,9 @@ def cmd_team(a):
     ms = all_msgs() if any(r["task"] for r in rows) else []
     for r in rows:  # 0.8.1 (card 1601): what a working or waiting row works on, in words
         r["title"] = task_title(ms, r["name"], r["task"]) if r["task"] else ""
+    vms = all_msgs() if rows else []
+    for r in rows:  # 0.8.6: what its verdicts say it does well and badly
+        r["good_at"], r["weak_at"] = strengths(r["name"], vms) if r.get("scope") != "adhoc" else ([], [])
     if a.json:
         print(json.dumps(rows, indent=1))
         return 0
@@ -4788,9 +4791,109 @@ def cmd_team(a):
             print("* %s: %s" % (r["name"], r["reason"]))
         if r.get("guard") in GUARD_NOTE:
             print("! %s: guard: %s (%s)" % (r["name"], r["guard"], GUARD_NOTE[r["guard"]]))
+        if r.get("good_at") or r.get("weak_at"):
+            print("~ %s: good at: %s; weak at: %s" % (r["name"], ", ".join(r["good_at"]) or "-", ", ".join(r["weak_at"]) or "-"))
     print("state: working = in a turn; waiting = turn over but a command it started still runs (not free); ready = free for input")
     if any(r["denied"] for r in rows):
         print("denied: calls refused by permission rules; with auto_unblock on pros lifted them itself, else the summoner got the fix (user: pros unblock NAME). Protected paths stay denied.")
+    return 0
+
+
+VERDICT_VAL = {"good": 1, "neutral": 0, "bad": -1}
+STOP = set(("the and for with that this from into its was were are has had have not but all any one two out off via per its our "
+            "his her them they you your then than when what which while who why how did does done also only just more most "
+            "still again real used uses use task tasks card user pros pro evaluate passed partial failed rated good bad neutral "
+            "test tests").split())
+
+
+def kind_words(text) -> set:
+    """Words of a job kind or a verdict: lower case, 3+ letters, no stop words or numbers, a plural s dropped."""
+    out = set()
+    for w in re.findall(r"[a-z][a-z0-9]{2,}", (text or "").lower()):
+        w = w[:-1] if len(w) > 4 and w.endswith("s") and not w.endswith("ss") else w
+        if w not in STOP:
+            out.add(w)
+    return out
+
+
+def verdict_text(v, ms) -> str:
+    """What a verdict is about: its --kind, its reason, its task id and the task's first line."""
+    title = next((task_title(ms, m["to"], v["task"]) for m in ms if m["task"] == v.get("task") and m["kind"] == "task"), "") if v.get("task") else ""
+    return " ".join(x for x in (v.get("kind", ""), v.get("note", ""), v.get("task", ""), title) if x)
+
+
+def pick_standing(name, job, ms, t=None) -> dict:
+    """0.8.6: how a professional stands for a kind of job, from its verdicts.  score = sum of +1 good, 0 neutral, -1 bad,
+    each halved per 7 days of age; blocked = 2 or more bads on this kind since its last good on it."""
+    t = t or now()
+    vs = [v for v in verdicts(name) if v.get("rating") in VERDICT_VAL]
+    want = kind_words(job)
+    on = [v for v in vs if want & kind_words(verdict_text(v, ms))]
+    score = lambda xs: sum(VERDICT_VAL[v["rating"]] * 0.5 ** ((t - float(v.get("t", t))) / 604800) for v in xs)
+    bads = 0
+    for v in reversed(on):
+        if v["rating"] == "good":
+            break
+        bads += v["rating"] == "bad"
+    count = lambda xs, r: sum(1 for v in xs if v["rating"] == r)
+    return {"name": name, "on_kind": len(on), "score": round(score(on), 3), "all_score": round(score(vs), 3), "blocked": bads >= 2,
+            "bads_since_good": bads, "good": count(on, "good"), "neutral": count(on, "neutral"), "bad": count(on, "bad"), "verdicts": len(vs)}
+
+
+def busy_minutes(name, ms, t=None) -> int:
+    """Minutes of the last 24 h a professional spent on tasks: created to answered (or to now while open)."""
+    t = t or now()
+    tot = 0.0
+    for m in ms:
+        if m["to"] == name and m["kind"] == "task" and m.get("created", 0) >= t - 86400:
+            tot += max(0.0, float(m.get("answered_at") or (t if m["state"] not in ("failed", "answered") else m["created"])) - m["created"])
+    return int(tot // 60)
+
+
+def strengths(name, ms) -> tuple:
+    """(good at, weak at): the words that come back most in its good and in its bad verdicts, three and two at most."""
+    cnt = {"good": {}, "bad": {}}
+    for v in verdicts(name):
+        if v.get("rating") in cnt:
+            for w in kind_words(verdict_text(v, ms)):
+                cnt[v["rating"]][w] = cnt[v["rating"]].get(w, 0) + 1
+    top = lambda d, n: [w for w, _ in sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))[:n]]
+    good = top(cnt["good"], 3)
+    return good, [w for w in top(cnt["bad"], 4) if w not in good][:2]
+
+
+def cmd_pick(a):
+    """0.8.6 (card 1563): the best free professional for a kind of job, from the verdicts on it."""
+    ms, t = all_msgs(), now()
+    rows = []
+    for v in entry_views():
+        if not v["enabled"] or v["live"] not in ("", "idle") or v.get("activity") in ("working", "waiting"):
+            continue
+        if v["state"] != "enabled" and v["live"] != "idle":  # a changed folder starts only after the user's review; a live one takes work
+            continue
+        p = pick_standing(v["name"], a.job, ms, t)
+        p["busy_min"] = busy_minutes(v["name"], ms, t)
+        p["fit"] = len(kind_words(a.job) & kind_words(" ".join([v.get("description", "")] + list(v.get("tags") or []))))
+        rows.append(p)
+    known = any(p["on_kind"] for p in rows)
+    for p in rows:
+        p["rank_score"] = p["score"] if known else p["all_score"]
+    free = sorted([p for p in rows if not p["blocked"]], key=lambda p: (-p["rank_score"], -p["fit"], p["busy_min"], p["name"]))
+    if a.json:
+        print(json.dumps({"job": a.job, "by": "kind" if known else "all verdicts", "pick": free[0]["name"] if free else "",
+                          "ranked": free, "blocked": [p for p in rows if p["blocked"]]}, indent=1))
+        return 0 if free else 1
+    for p in rows:
+        if p["blocked"]:
+            print("skip %s: %d bad verdicts on '%s' since its last good one there" % (p["name"], p["bads_since_good"], a.job))
+    if not free:
+        print("no free professional for '%s'" % a.job)
+        return 1
+    b = free[0]
+    why = ("%d verdicts on '%s': %d good, %d neutral, %d bad (score %.2f)" % (b["on_kind"], a.job, b["good"], b["neutral"], b["bad"], b["score"])
+           if known else "no verdict on '%s' yet; by all %d verdicts (score %.2f)" % (a.job, b["verdicts"], b["all_score"]))
+    fit = "; %d word(s) of it in its description" % b["fit"] if b["fit"] else ""
+    print("pick: %s  (%s%s; %d busy min in 24 h)" % (b["name"], why, fit, b["busy_min"]))
     return 0
 
 
@@ -5406,6 +5509,10 @@ def build_parser():
     sp.add_argument("why", nargs="?", help="one line: what it got right or wrong")
     sp.add_argument("--note")
     sp.add_argument("--task", help="the task this verdict is for (default: its last DONE task for you)")
+    sp.add_argument("--kind", help="the kind of job, e.g. review, voice, docs (pros pick --for matches it)")
+    sp = add("pick", cmd_pick, help="the best free professional for a kind of job, from its verdicts (recent good first; 2 bads in a row on it: skipped until a good)")
+    sp.add_argument("--for", dest="job", required=True, help="the kind of job, in a few words")
+    sp.add_argument("--json", action="store_true")
     sp = add("sessions", cmd_sessions, help="session history of a professional")
     sp.add_argument("name")
     sp.add_argument("--json", action="store_true")
