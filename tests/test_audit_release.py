@@ -72,7 +72,7 @@ class TestReleaseScenario(unittest.TestCase):
         os.utime(p, (1, 1))
 
     def env(self):
-        e = {k: v for k, v in os.environ.items() if k not in ("PRO_SESSION", "TMUX")}
+        e = helpers.user_env()
         e.update(PRO_HOME=self.home, PRO_AUDIT_NOW=NOW, PRO_TMUX_SOCKET="audit-release-none", CLAUDE_CONFIG_DIR=os.path.join(self.tmp, "claude"))
         return e
 

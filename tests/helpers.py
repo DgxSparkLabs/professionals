@@ -55,6 +55,17 @@ def make_persona(mdir, name, tags="test", may="true", extra_plugin=""):
     return p
 
 
+SESSION_VARS = ("PRO_SELF", "PRO_SESSION", "TMUX", "TMUX_PANE", "CLAUDE_CODE_SESSION_ID")
+
+
+def user_env(drop=(), **extra):
+    """os.environ as the user's own shell would have it: without the variables of a professional session (the suite may run
+    inside one), without `drop`, plus `extra`.  Commands the user-only gate guards need this (0.9.3)."""
+    e = {k: v for k, v in os.environ.items() if k not in SESSION_VARS and k not in drop}
+    e.update(extra)
+    return e
+
+
 class ProTestCase(unittest.TestCase):
     names = ("alpha", "beta", "gamma", "delta")
 
@@ -78,7 +89,7 @@ class ProTestCase(unittest.TestCase):
         self.env = dict(os.environ, PRO_HOME=self.home, PRO_TMUX_SOCKET=self.sock, PRO_MARKETPLACE=self.mdir,
                         PRO_CLAUDE_BIN="%s %s" % (sys.executable, FAKE), FAKE_DIR=self.fakedir, FAKE_PRO=PRO,
                         HOME=self.fakehome, PRO_NO_AUTO="1")
-        for k in ("PRO_SELF", "PRO_SESSION", "TMUX", "TMUX_PANE", "CLAUDE_CODE_SESSION_ID"):
+        for k in SESSION_VARS:
             self.env.pop(k, None)
         self.addCleanup(self.cleanup)
 

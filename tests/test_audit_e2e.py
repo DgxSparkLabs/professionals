@@ -58,7 +58,7 @@ class TestFirstLocalTrace(unittest.TestCase):
         os.utime(p, (1, 1))  # settled, so the importer removes it after the import
 
     def pros(self, *args, env=None):
-        e = {k: v for k, v in os.environ.items() if k not in ("PRO_SESSION", "TMUX")}
+        e = helpers.user_env()
         e.update(PRO_HOME=self.home, PRO_AUDIT_NOW=NOW, PRO_TMUX_SOCKET="audit-e2e-none", CLAUDE_CONFIG_DIR=os.path.join(self.tmp, "claude"))
         e.update(env or {})
         return subprocess.run([sys.executable, helpers.PRO, "audit"] + list(args), capture_output=True, text=True, env=e, timeout=60)

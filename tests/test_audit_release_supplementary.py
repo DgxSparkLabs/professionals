@@ -69,7 +69,7 @@ class Home(unittest.TestCase):
 
     def env(self, home=None, extra=None):
         home = home or self.home
-        e = {k: v for k, v in os.environ.items() if k not in ("PRO_SESSION", "TMUX", "PROS_AUDIT_TEST_DIE")}
+        e = helpers.user_env(drop=("PROS_AUDIT_TEST_DIE",))
         e.update(PRO_HOME=home, PRO_AUDIT_NOW=NOW, PRO_TMUX_SOCKET="audit-g-none",
                  CLAUDE_CONFIG_DIR=os.path.join(self.tmp, "claude-" + os.path.basename(home)))
         e.update(extra or {})

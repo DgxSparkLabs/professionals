@@ -31,7 +31,7 @@ class TestCli(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def pros(self, *args, env=None):
-        e = {k: v for k, v in os.environ.items() if k not in ("PRO_SESSION", "TMUX")}
+        e = helpers.user_env()
         e.update(PRO_HOME=self.home, PRO_AUDIT_NOW=str(F.NOW), PRO_TMUX_SOCKET="audit-cli-test-none")
         e.update(env or {})
         return subprocess.run([sys.executable, helpers.PRO, "audit"] + list(args), capture_output=True, text=True, env=e, timeout=60)

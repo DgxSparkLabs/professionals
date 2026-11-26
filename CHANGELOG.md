@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.9.3
+
+- Tests: the audit tests (the suite's known 24 failures + 2 errors) now pass inside a professional session too: they
+  built their environment by hand and kept `PRO_SELF`; they share `helpers.user_env()`, which drops every session variable.
+- Spec: the audit's user-only gate states its `setsid` limit (same Unix user; a detached process is not a descendant).
+
 ## 0.9.2
 
 - Safety: a Cursor model on Pi (`guard: none`) ran its tools in Cursor's own agent, unseen by the pros guard. pros now

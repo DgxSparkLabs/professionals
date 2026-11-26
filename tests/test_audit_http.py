@@ -144,7 +144,7 @@ from pros_audit import manage as M  # noqa: E402
 
 
 def e_env(tmp, home, extra=None):
-    e = {k: v for k, v in os.environ.items() if k not in ("PRO_SESSION", "TMUX")}
+    e = helpers.user_env()
     e.update(PRO_HOME=home, PRO_AUDIT_NOW=ENOW, PRO_TMUX_SOCKET="audit-f1-none", CLAUDE_CONFIG_DIR=os.path.join(tmp, "claude"))
     e.update(extra or {})
     return e

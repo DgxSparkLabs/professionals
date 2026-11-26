@@ -112,7 +112,7 @@ with `pros audit report delete <name>`.
 ## What the protection covers: the same-user limitation
 
 The store is private to your OS user (0700/0600 files), the dashboard binds to 127.0.0.1 and needs the owner token for every request,
-professional sessions are denied every `pros audit` command, and `audit/` is in every professional's deny rules. That keeps the audit
+professional sessions are denied every `pros audit` command (by environment and process ancestry; a process detached with `setsid` escapes the ancestry check, see `docs/spec/audit/query.md`), and `audit/` is in every professional's deny rules. That keeps the audit
 away from other users and from professionals working within their Claude Code permissions.
 
 It does not protect against your own user. Professionals run as you, so a process of the same user that is not bound by those
