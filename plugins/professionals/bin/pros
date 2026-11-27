@@ -49,7 +49,7 @@ import time
 import uuid
 from pathlib import Path
 
-VERSION = "0.9.3"
+VERSION = "0.9.4"
 NAME_RE = re.compile(r"^[a-z0-9-]{1,40}$")
 RESERVED = {"user", "pro", "all"}
 UPSTREAM = "https://github.com/DgxSparkLabs/professionals"
@@ -1468,6 +1468,9 @@ def check_denials(rec):
         new.append(d)
     st_set(s, denials_mtime=mt, denials_seen=sorted(x for x in seen if x)[-500:], denials_keys=sorted(keys)[-200:],
            last_denial=new[-1] if new else st.get("last_denial"))
+    for d in new:  # 0.9.4: kept per task for pros audit-trail
+        with contextlib.suppress(Exception):
+            hist_append(rec.get("entry", rec["name"]), {"ev": "denied", "task": st.get("task") or "-", "tool": d["tool"], "target": d["target"][:300], "session": s})
     auto = None
     for d in new:
         who = rec.get("summoner") or "user"
@@ -3980,6 +3983,163 @@ def cmd_rate(a):
     return 0
 
 
+# Audit trail and lessons (0.9.4, card 1594): verdicts that drive self-improvement.  The trail reads what pros keeps (messages,
+# msg_retention_days; history rows: rate, evaluate mirrors, denied); lessons only PROPOSES a change, the owner applies it.
+LESSONS_MARK = "<!-- written by pros lessons; edit freely, pros overwrites this file only while this line is first -->"
+
+
+def parse_since(text) -> float:
+    """'7d', '24h', '30m', '90s' or a plain number of days -> seconds; '' -> 0 (no limit)."""
+    t = (text or "").strip().lower()
+    if not t:
+        return 0.0
+    m = re.match(r"^(\d+(?:\.\d+)?)([smhdw]?)$", t)
+    if not m:
+        die("--since takes a span like 7d, 24h or 30m", 2)
+    return float(m.group(1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800, "": 86400}[m.group(2)]
+
+
+def first_line(text, n=120) -> str:
+    line = next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")
+    return line if len(line) <= n else line[:n - 1] + "…"
+
+
+def dur_text(sec) -> str:
+    if sec is None:
+        return "-"
+    sec = int(round(sec))
+    return "%dh%02dm" % (sec // 3600, sec % 3600 // 60) if sec >= 3600 else "%dm%02ds" % (sec // 60, sec % 60)
+
+
+def verdict_view(v) -> dict:
+    ev = re.match(r"^evaluate (\w+)", v.get("note") or "") if v.get("source") == "evaluate" else None
+    return {"rating": v.get("rating", ""), "note": "" if ev else v.get("note", ""), "evaluate": ev.group(1) if ev else "",
+            "kind": v.get("kind", ""), "at": v.get("t", 0)}
+
+
+def trail_rows(name, since_s=0.0, ms=None) -> list:
+    """Every task to `name` that pros still keeps, oldest first: request, reply, state, time taken, verdicts, refused tools."""
+    ms = all_msgs() if ms is None else ms
+    cut = now() - since_s if since_s else 0
+    hist = hist_rows(name)
+    vs, den = {}, {}
+    for r in hist:
+        if r.get("ev") == "rate" and r.get("task"):
+            vs.setdefault(r["task"], []).append(verdict_view(r))
+        elif r.get("ev") == "denied":
+            k = (r.get("tool", "?"), r.get("target", ""))
+            d = den.setdefault(r.get("task") or "-", {})
+            d[k] = d.get(k, 0) + 1
+    tasks = {}
+    for m in ms:
+        if m["kind"] == "task" and m["to"] == name and m.get("created", 0) >= cut:
+            tasks.setdefault(m["task"], m)  # the first ask of a task id; later attempts and add-ons share it
+    out = []
+    for task, q in tasks.items():
+        rep_ = next((m for m in ms if m["kind"] == "reply" and m["from"] == name and m["task"] == task and m["created"] >= q["created"] and not m.get("suppressed")), None)
+        took = (rep_["created"] - q["created"]) if rep_ else ((q["answered_at"] - q["created"]) if q.get("answered_at") else None)
+        out.append({"task": task, "msg": q["id"], "from": q["from"], "asked_at": q["created"], "request": first_line(q["body"]),
+                    "reply": first_line(rep_["body"]) if rep_ else "", "state": q.get("state", ""), "time_s": int(round(took)) if took is not None else None,
+                    "verdicts": vs.get(task, []), "refused": [{"tool": k[0], "target": k[1], "n": n} for k, n in sorted((den.get(task) or {}).items())]})
+    return sorted(out, key=lambda r: r["asked_at"])
+
+
+def cmd_audit_trail(a):
+    require_user("read the audit trail", "a professional session must not read other sessions' tasks; it reads pros evaluations")
+    name = check_name(a.name)
+    rows = trail_rows(name, parse_since(a.since))
+    unrated = sum(1 for r in rows if not r["verdicts"] and r["reply"])
+    if a.unrated:
+        rows = [r for r in rows if not r["verdicts"] and r["reply"]]
+    if a.json:
+        print(json.dumps({"pro": name, "since": a.since or "", "tasks": rows, "unrated": unrated}, indent=1))
+        return 0
+    if not rows:
+        print("%s: no tasks pros still keeps%s (messages are kept msg_retention_days)" % (name, " in the last " + a.since if a.since else ""))
+        return 0
+    for r in rows:
+        v = "; ".join(("evaluate %s" % x["evaluate"]) if x["evaluate"] else ("%s: %s" % (x["rating"], x["note"]) if x["note"] else x["rating"]) for x in r["verdicts"])
+        print("%s  %s  from %s  %s  %s  %s" % (r["task"], time.strftime("%Y-%m-%d %H:%M", time.localtime(r["asked_at"])), r["from"], r["state"],
+                                             dur_text(r["time_s"]), v or "no verdict"))
+        print("  asked: %s" % r["request"])
+        print("  reply: %s" % (r["reply"] or "(none)"))
+        if r["refused"]:
+            print("  refused: %s" % ", ".join("%s %s x%d" % (x["tool"], x["target"].replace("\n", " ")[:80], x["n"]) for x in r["refused"]))
+    print("%d tasks, %d replies without a verdict%s" % (len(rows), unrated, " (pros rate %s good|neutral|bad \"why\" --task TASK)" % name if unrated else ""))
+    return 0
+
+
+def lesson_groups(rows) -> list:
+    """Bad and neutral reasons, failed and partial evaluations -> lessons: reasons sharing their most frequent word are one lesson."""
+    items = []
+    for r in rows:
+        for v in r["verdicts"]:
+            if v["evaluate"] in ("failed", "partial") or (not v["evaluate"] and v["rating"] in ("bad", "neutral")):
+                items.append({"task": r["task"], "request": r["request"], "reason": v["note"], "rating": v["rating"], "evaluate": v["evaluate"],
+                              "refused": r["refused"], "words": kind_words(v["note"])})
+    freq = {}
+    for it in items:
+        for w in it["words"]:
+            freq[w] = freq.get(w, 0) + 1
+    groups = {}
+    for it in items:
+        shared = [w for w in it["words"] if freq[w] > 1]
+        key = min(shared, key=lambda w: (-freq[w], -len(w), w)) if shared else ""
+        groups.setdefault(key or ("task:" + it["task"]), []).append(it)
+    out = []
+    for key, its in groups.items():
+        reasons = []
+        for it in its:
+            if it["reason"] and it["reason"] not in reasons:
+                reasons.append(it["reason"])
+        out.append({"key": key if not key.startswith("task:") else "", "n": len(its), "tasks": [it["task"] for it in its], "reasons": reasons,
+                    "requests": [it["request"] for it in its if not it["reason"]], "bad": sum(1 for it in its if it["rating"] == "bad"),
+                    "refused": sorted({"%s %s" % (x["tool"], x["target"][:60]) for it in its for x in it["refused"]})})
+    return sorted(out, key=lambda g: (-g["n"], -g["bad"], g["key"]))
+
+
+def lessons_text(name, groups, since) -> str:
+    lines = [LESSONS_MARK, "# PROPOSED lessons for %s" % name, "",
+             "Proposed by `pros lessons %s` on %s from %d bad, neutral or failed verdicts%s. Nothing was changed: this is a proposal." % (
+                 name, time.strftime("%Y-%m-%d %H:%M"), sum(g["n"] for g in groups), " in the last " + since if since else ""),
+             "To adopt it, the owner moves the lessons worth keeping into this professional's AGENTS.md or CLAUDE.md (or its persona),",
+             "then runs `pros add --refresh <folder>` so pros trusts the new content. Delete this file when done.", "", "## Lessons from past tasks", ""]
+    for g in groups:
+        head = ("About '%s'" % g["key"]) if g["key"] else "One-off"
+        lines.append("- %s (%d verdict%s, tasks %s):" % (head, g["n"], "" if g["n"] == 1 else "s", ", ".join(g["tasks"])))
+        lines += ['  - "%s"' % r for r in g["reasons"][:3]]
+        lines += ["  - failed without a reason: %s" % q for q in g["requests"][:3]]
+        if g["refused"]:
+            lines.append("  - tools it was refused there: %s" % "; ".join(g["refused"][:3]))
+    return "\n".join(lines) + "\n"
+
+
+def cmd_lessons(a):
+    require_user("propose lessons", "only the owner turns verdicts into a change of a professional")
+    name = check_name(a.name)
+    e = (reg_get(tolerant=True)[0].get("entries") or {}).get(name)
+    if not e:
+        die("no professional named %s in the registry" % name, 3, "not_found")
+    groups = lesson_groups(trail_rows(name, parse_since(a.since)))
+    path = Path(e["path"]) / "LESSONS.proposed.md" if e.get("kind") == "folder" and e.get("path") else pro_home() / "lessons" / (name + ".proposed.md")
+    if a.json:
+        print(json.dumps({"pro": name, "path": str(path) if groups else "", "lessons": groups}, indent=1))
+    if not groups:
+        if not a.json:
+            print("%s: no bad, neutral or failed verdicts%s; nothing to propose" % (name, " in the last " + a.since if a.since else ""))
+        return 0
+    if path.exists() and not path.read_text(encoding="utf-8", errors="replace").startswith(LESSONS_MARK):
+        die("%s exists and pros did not write it; move it away first (pros never overwrites a file it did not write)" % path, 1)
+    ensure(path.parent)
+    tmp = path.with_name(".%s.%d.tmp" % (path.name, os.getpid()))
+    tmp.write_text(lessons_text(name, groups, a.since), encoding="utf-8")
+    os.replace(tmp, path)
+    if not a.json:
+        print("%s: %d lessons from %d verdicts proposed in %s" % (name, len(groups), sum(g["n"] for g in groups), path))
+        print("Nothing else changed. Review it, move what you keep into the instructions, then: pros add --refresh %s" % (e.get("path") or name))
+    return 0
+
+
 def config_edit(fn):
     """Read-modify-write of config.json (the user's file, not the merged defaults) under one lock."""
     path = pro_home() / "config.json"
@@ -4742,10 +4902,13 @@ def cmd_inbox(a):
     if rows:
         print("read one with: pros read <id>")
     todo = unrated(me) if not is_pro() else []
-    for n, tk in todo[-5:]:  # 0.8.3: a DONE task without a verdict, until it gets one
-        print(rate_nudge(n, tk))
-    if len(todo) > 5:
-        print("(%d more done tasks without a verdict)" % (len(todo) - 5))
+    if todo:  # 0.9.4: one line for all of them (was one rate line per task); the trail lists them
+        by = {}
+        for n, _ in todo:
+            by[n] = by.get(n, 0) + 1
+        who = sorted(by, key=lambda n: (-by[n], n))
+        print("%d repl%s from %s without a verdict (see: pros audit-trail %s --unrated)" % (
+            len(todo), "y" if len(todo) == 1 else "ies", who[0] if len(who) == 1 else ", ".join("%s (%d)" % (n, by[n]) for n in who), who[0]))
     return 0
 
 
@@ -5737,6 +5900,15 @@ def build_parser():
     sp.add_argument("--note")
     sp.add_argument("--task", help="the task this verdict is for (default: its last DONE task for you)")
     sp.add_argument("--kind", help="the kind of job, e.g. review, voice, docs (pros pick --for matches it)")
+    sp = add("audit-trail", cmd_audit_trail, help="every task of a professional: request, reply, verdicts, time taken, refused tools (user only)")
+    sp.add_argument("name")
+    sp.add_argument("--since", default="", help="only tasks asked in this span, e.g. 7d, 24h")
+    sp.add_argument("--unrated", action="store_true", help="only replies without a verdict")
+    sp.add_argument("--json", action="store_true")
+    sp = add("lessons", cmd_lessons, help="group bad/neutral reasons and failed evaluations into lessons, PROPOSED in LESSONS.proposed.md (user only)")
+    sp.add_argument("name")
+    sp.add_argument("--since", default="", help="only verdicts on tasks asked in this span, e.g. 30d")
+    sp.add_argument("--json", action="store_true")
     sp = add("pick", cmd_pick, help="the best free professional for a kind of job, from its verdicts (recent good first; 2 bads in a row on it: skipped until a good)")
     sp.add_argument("--for", dest="job", required=True, help="the kind of job, in a few words")
     sp.add_argument("--json", action="store_true")

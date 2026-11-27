@@ -31,6 +31,8 @@ Do not summon for small things you can do well in a minute. Each professional is
 | `pros rate <name> good\|neutral\|bad "why" [--task T] [--kind K]` | User only: the verdict on a professional's DONE task; `pros inbox` nudges until each one has one, `pros team` shows the last and a good at / weak at line |
 | `pros pick --for "<kind of job>" [--json]` | The best free professional for that kind of job, from its verdicts, with the reason; use it before you choose whom to summon |
 | `pros evaluations [name] [--last N] [--json]` | Past verdicts per professional, with its harness, model and thinking. Read it before choosing whom to ask |
+| `pros audit-trail <name> [--since 7d] [--unrated] [--json]` | User only: every task of a professional with its request, reply, verdicts, time taken and refused tools |
+| `pros lessons <name> [--since 30d] [--json]` | User only: groups bad/neutral reasons and failed evaluations into lessons, PROPOSED in the folder's `LESSONS.proposed.md`; never edits its prompt |
 | `pros evaluate <task> passed\|partial\|failed [--criterion id=outcome]` | Record your verdict on an answer to a task you sent (only its caller or the user). Do it for every task |
 | `pros harness list [--json]` | The harnesses pros can start (claude, pi, ...) and whether their program is found; `add`/`remove` are user only |
 | `pros send <to> <text\|@file> [--task id] [--kind task\|reply\|note] [--no-wake] [--fresh] [--fallback name]` | Send a message; queued if the target is busy; starts an allowlisted professional that is not running (caps still apply), unless `--no-wake`; `--fresh` runs it on a new session (idle one replaced, busy one refused with exit 5); `--fallback` names who re-runs the task if the target dies or misses the deadline |

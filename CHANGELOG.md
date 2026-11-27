@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.9.4
+
+- Card 1594: `pros audit-trail NAME` (every task: request, reply, verdicts, time taken, refused tools), `pros lessons NAME`
+  (bad/neutral reasons and failed evaluations grouped into a PROPOSED `LESSONS.proposed.md`; never edits a prompt), and
+  `pros inbox` prints one line of unrated replies instead of a rate line per task. Denied calls are kept per task.
+
 ## 0.9.3
 
 - Tests: the audit tests (the suite's known 24 failures + 2 errors) now pass inside a professional session too: they

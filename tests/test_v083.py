@@ -19,11 +19,12 @@ class Verdicts(ProTestCase):
         self.summon("alpha")
         rep = self.done("t-v1")
         nudge = "rate: pros rate alpha good|neutral|bad \"why\" --task t-v1"
-        self.assertIn(nudge, self.ok("inbox").stdout)
+        line = "1 reply from alpha without a verdict"  # 0.9.4: inbox has one line for all unrated replies (was the rate line per task)
+        self.assertIn(line, self.ok("inbox").stdout)
         self.assertIn(nudge, self.ok("read", rep["id"]).stdout)
-        self.assertIn(nudge, self.ok("inbox").stdout)  # read is not rated: still nudged
+        self.assertIn(line, self.ok("inbox").stdout)  # read is not rated: still nudged
         self.ok("rate", "alpha", "neutral", "found it, missed the edge case", "--task", "t-v1")
-        self.assertNotIn("t-v1", self.ok("inbox").stdout)
+        self.assertNotIn("without a verdict", self.ok("inbox").stdout)
         self.assertNotIn("rate:", self.ok("read", rep["id"]).stdout)
 
     def test_rate_defaults_to_the_last_done_task_and_team_shows_it(self):
@@ -32,9 +33,9 @@ class Verdicts(ProTestCase):
         self.done("t-v3")
         r = self.ok("rate", "alpha", "good", "exact list")
         self.assertIn("t-v3", r.stdout)
-        out = self.ok("inbox").stdout
-        self.assertIn("--task t-v2", out)
-        self.assertNotIn("--task t-v3", out)
+        self.assertIn("1 reply from alpha without a verdict", self.ok("inbox").stdout)  # 0.9.4: the one line; the trail names the task
+        left = [r["task"] for r in json.loads(self.ok("audit-trail", "alpha", "--unrated", "--json").stdout)["tasks"]]
+        self.assertEqual(left, ["t-v2"])
         row = [x for x in json.loads(self.ok("team", "--json").stdout) if x["name"] == "alpha"][0]
         self.assertEqual((row["verdict"]["rating"], row["verdict"]["note"], row["verdict"]["task"]), ("good", "exact list", "t-v3"))
         self.assertIn("good: exact list", self.ok("team").stdout)
