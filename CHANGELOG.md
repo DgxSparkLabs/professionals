@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Card 1606: `pros team` and `pros list` show `needs approval` when a session waits on a permission, folder trust or imports
+  dialog (before: a bare `dialog`), and the footer explains it. A joined session's tmux pane is now read too, so its dialog
+  shows (before: `working` or `ready`). `waiting` (a command it started still runs) is unchanged. Tests: `tests/test_v080.py`.
+
 ## 0.9.4
 
 - Card 1594: `pros audit-trail NAME` (every task: request, reply, verdicts, time taken, refused tools), `pros lessons NAME`

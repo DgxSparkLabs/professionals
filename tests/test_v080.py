@@ -95,6 +95,17 @@ class AdHoc(ProTestCase):
         self.assertEqual(json.loads(out)["decision"], "block")
         self.assertIn("t-s", json.loads(out)["reason"])
 
+    def test_joined_session_at_a_permission_dialog_needs_approval(self):
+        """card 1606: a joined session's pane is read too; its permission dialog shows as 'needs approval'."""
+        self.start_plain("lead")
+        self.join("lead")
+        self.ok("send", "lead", "PERMIT 12\nECHO approved", "--task", "t-aperm", as_pro="beta")
+        row = lambda: [x for x in json.loads(self.ok("team", "--json").stdout) if x["name"] == "lead"][0]
+        self.wait_until(lambda: row()["activity"] == "needs approval", 20, "joined session needs approval")
+        r = row()
+        self.assertEqual((r["scope"], r["state"], r["reason"]), ("adhoc", "dialog", "permission dialog"), r)  # a joined row has no task id (pre-1606)
+        self.wait_until(lambda: row()["activity"] == "ready", 30, "ready once the dialog is gone")
+
     def test_join_rules_and_leave(self):
         env = {"CLAUDE_CODE_SESSION_ID": "s-1", "CLAUDE_PID": str(os.getpid())}
         self.assertEqual(self.pro("join", "lead", env=env, as_pro="alpha").returncode, 4)  # a professional has its name
@@ -139,6 +150,19 @@ class LiveStates(ProTestCase):
                 pass
         self.wait_until(lambda: self.row("alpha")["activity"] == "ready", 10, "ready after the command ended")
         self.assertIn("ready", [l for l in self.ok("team").stdout.splitlines() if l.startswith("alpha")][0])
+
+    def test_permission_dialog_needs_approval(self):
+        """card 1606: a professional at a tool permission dialog is 'needs approval' (not working, not ready); the footer says so."""
+        self.summon("alpha")
+        self.ok("send", "alpha", "PERMIT 12\nECHO approved", "--task", "t-perm")
+        self.wait_until(lambda: self.row("alpha")["activity"] == "needs approval", 15, "needs approval")
+        r = self.row("alpha")
+        self.assertEqual((r["state"], r["reason"], r["task"]), ("dialog", "permission dialog", "t-perm"), r)
+        out = self.ok("team").stdout
+        self.assertIn("needs approval*", [l for l in out.splitlines() if l.startswith("alpha")][0])
+        self.assertIn("needs approval = a permission", out)
+        self.assertEqual(self.listing()["alpha"]["activity"], "needs approval")
+        self.wait_until(lambda: self.row("alpha")["activity"] == "ready", 30, "ready once the dialog is gone")
 
     def test_working_while_in_a_turn(self):
         self.summon("alpha")

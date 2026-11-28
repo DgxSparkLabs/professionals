@@ -1722,7 +1722,10 @@ def pane_pid(s):
 
 
 def activity(state, bg) -> str:
-    """What `team` and `list` show: working (in a turn), waiting (turn over, a command it started still runs), ready (free for input)."""
+    """What `team` and `list` show: working (in a turn), waiting (turn over, a command it started still runs), ready (free for input),
+    needs approval (card 1606: a permission, folder trust or imports dialog waits for a person's answer)."""
+    if state == "dialog":
+        return "needs approval"
     if state == "busy":
         return "working"
     if state == "idle":
@@ -5119,7 +5122,7 @@ def cmd_team(a):
         rows.append({"name": rec["name"], "session": s, "scope": rec["scope"], "state": state, "reason": reason, "activity": act, "bg": len(bg),
                      "harness": rec.get("harness", "claude"), "model": rec.get("model") or st.get("pi_model") or "", "thinking": rec.get("thinking") or "",
                      "guard": guard_of(rec.get("harness", "claude"), rec.get("model") or st.get("pi_model") or ""), "seen_model": st.get("seen_model", ""),
-                     "task": st.get("task", "") if act in ("working", "waiting") else "", "summoner": rec.get("summoner", ""),
+                     "task": st.get("task", "") if act in ("working", "waiting", "needs approval") else "", "summoner": rec.get("summoner", ""),
                      "age_s": int(now() - rec["started"]), "queued": queue_len(s), "denied": den,
                      "workdir": rec["workdir"], "agents_status": agents_status().get(s, ""), "verdict": last_verdict(rec.get("entry") or rec["name"])})
     rows += adhoc_rows()
@@ -5154,7 +5157,7 @@ def cmd_team(a):
             print("! %s: guard: %s (%s)" % (r["name"], r["guard"], GUARD_NOTE[r["guard"]]))
         if r.get("good_at") or r.get("weak_at"):
             print("~ %s: good at: %s; weak at: %s" % (r["name"], ", ".join(r["good_at"]) or "-", ", ".join(r["weak_at"]) or "-"))
-    print("state: working = in a turn; waiting = turn over but a command it started still runs (not free); ready = free for input")
+    print("state: working = in a turn; waiting = turn over but a command it started still runs (not free); ready = free for input; needs approval = a permission, trust or imports dialog waits for a person to answer it in that session (a professional: pros attach NAME)")
     if any(r["denied"] for r in rows):
         print("denied: calls refused by permission rules; with auto_unblock on pros lifted them itself, else the summoner got the fix (user: pros unblock NAME). Protected paths stay denied.")
     return 0
@@ -5329,6 +5332,9 @@ def cmd_leave(a):
     return 0
 
 
+ADHOC_DIALOGS = {"permission": "permission dialog", "trust": "folder trust dialog", "imports": "external imports dialog"}  # as live_state names them
+
+
 def adhoc_rows() -> list:
     rows = []
     for r in adhoc_all():
@@ -5337,10 +5343,13 @@ def adhoc_rows() -> list:
         key = adhoc_key(r["name"])
         st = st_get(key)
         hs = st.get("state") or "idle"
-        bg = bg_commands(r["claude_pid"]) if hs != "busy" else []
-        rows.append({"name": r["name"], "session": key, "scope": "adhoc", "state": "busy" if hs == "busy" else "idle", "reason": "",
-                     "activity": activity("busy" if hs == "busy" else "idle", bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "", "guard": "", "verdict": {}, "seen_model": "",
-                     "task": st.get("task", "") if hs == "busy" or bg else "", "summoner": "-", "age_s": int(now() - float(r.get("joined", now()))),
+        c = classify_pane(xtmux(r, "capture-pane", "-p", "-e", "-t", r["tmux_pane"]).stdout) if adhoc_pane_ok(r) else ""  # card 1606: its pane, when known
+        dlg = ADHOC_DIALOGS.get(c, "")
+        state = "dialog" if dlg else "busy" if hs == "busy" else "idle"
+        bg = bg_commands(r["claude_pid"]) if state == "idle" else []
+        rows.append({"name": r["name"], "session": key, "scope": "adhoc", "state": state, "reason": dlg,
+                     "activity": activity(state, bg), "bg": len(bg), "harness": "adhoc", "model": "", "thinking": "", "guard": "", "verdict": {}, "seen_model": "",
+                     "task": st.get("task", "") if hs == "busy" or bg or dlg else "", "summoner": "-", "age_s": int(now() - float(r.get("joined", now()))),
                      "queued": queue_len(key), "denied": {}, "workdir": r.get("cwd", ""), "agents_status": "",
                      "wake": "listener" if adhoc_listening(r) else ("tmux" if r.get("tmux_pane") else "hooks")})
     return rows

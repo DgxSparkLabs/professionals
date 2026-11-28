@@ -299,6 +299,15 @@ class Session:
                         with open(self.transcript, "a") as tf:
                             tf.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
                                 {"type": "tool_use", "name": "Write", "input": {"file_path": wp, "content": wt.replace("\\n", "\n")}}]}}) + "\n")
+                    elif cmd == "PERMIT":  # PERMIT <s>: a tool permission dialog (card 1606) stays on screen <s> seconds or until Enter
+                        sys.stdout.write("\r\n Bash command\r\n   rm build.log\r\n Do you want to proceed?\r\n ❯ 1. Yes\r\n   2. No\r\n\r\n Esc to cancel\r\n")
+                        sys.stdout.flush()
+                        end = time.time() + float(rest)
+                        while time.time() < end:
+                            r, _, _ = select.select([sys.stdin], [], [], max(0.0, end - time.time()))
+                            if r and "\r" in os.read(sys.stdin.fileno(), 64).decode(errors="replace"):
+                                break
+                        self.draw()
                     elif cmd == "NOREPLY":
                         noreply = True
                     elif cmd == "CRASH":
